@@ -2,3 +2,6 @@
 *.pdf
 *.pbtxt
 *.gv
+*.xml
+*.iml
+*.txt

@@ -24,24 +24,24 @@ class Solver:
     @staticmethod
     def max(x, ys_):
         ys = list(map(resolve_type, ys_))
-        try:
-            return z3.And(z3.Or([x == y for y in ys]), z3.And([x >= y for y in ys]))
-        except:
-            print([type(y) for y in ys])
+        # try:
+        return z3.And(z3.Or([x == y for y in ys]), z3.And([x >= y for y in ys]))
+        # except:
+        #     print([type(y) for y in ys])
 
     @staticmethod
     def min(x, ys_):
         ys = list(map(resolve_type, ys_))
-        try:
-            return z3.And(z3.Or([x == y for y in ys]), z3.And([x <= y for y in ys]))
-        except:
-            print([type(y) for y in ys])
+        # try:
+        return z3.And(z3.Or([x == y for y in ys]), z3.And([x <= y for y in ys]))
+        # except:
+        #     print([type(y) for y in ys])
 
     @staticmethod
     def condition(pred, all_zero, all_one, unknown):
-        z3.Or(z3.And(pred.left, z3.Not(pred.right), all_zero),
-              z3.And(pred.right, z3.Not(pred.left), all_one),
-              z3.And(pred.left, pred.right, unknown))
+        return z3.Or(z3.And(pred.left, z3.Not(pred.right), all_zero),
+                     z3.And(pred.right, z3.Not(pred.left), all_one),
+                     z3.And(pred.left, pred.right, unknown))
 
 
 class Range:

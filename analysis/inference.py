@@ -105,17 +105,7 @@ class InferValue:
 
     @staticmethod
     def concatv2(args: list, node):
-        maxs = [args[i].value.right if isinstance(args[i].value, Range) else resolve_type(np.max(args[i].value)) for i
-                in range(len(args) - 1)]
-        mins = [args[i].value.left if isinstance(args[i].value, Range) else resolve_type(np.min(args[i].value)) for i in
-                range(len(args) - 1)]
-        if None in maxs or None in mins:
-            return None
-        try:
-            return Range(left=min(mins), right=max(maxs))
-        except:
-            value = Range(name="concatv2", dtype=args[0].dtype)
-            return value, z3.And(Solver.min(value.left, mins), Solver.max(value.right, maxs))
+        return InferValue.pack(args[:-1], node)
 
     @staticmethod
     def const(args: list, node):
@@ -139,12 +129,16 @@ class InferValue:
     @staticmethod
     def equal(args: list, node):
         assert len(args) == 2
-        x = InferValue.expanddims([args[0]], node)
-        y = InferValue.expanddims([args[1]], node)
-        value = Range(name="equal", dtype=10)
-        return value, z3.Or(
-            z3.And(x.left == y.left, x.right == y.right, x.left == x.right, z3.Not(value.left), value.right),
-            z3.Not(z3.And(x.left == y.left, x.right == y.right, x.left == x.right)))
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            return np.equal(args[0].value, args[1].value)
+        else:
+            x = InferValue.expanddims([args[0]], node)
+            y = InferValue.expanddims([args[1]], node)
+            value = Range(name="equal", dtype=10)
+            return value, z3.Or(
+                z3.And(x.left == y.left, x.right == y.right, x.left == x.right, z3.Not(value.left), value.right),
+                z3.And(z3.Not(z3.And(x.left == y.left, x.right == y.right, x.left == x.right)), value.left,
+                       value.right))
 
     @staticmethod
     def expanddims(args: list, node):
@@ -194,6 +188,36 @@ class InferValue:
         return InferValue.expanddims(args, node)
 
     @staticmethod
+    def greater(args: list, node):
+        assert len(args) == 2
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            return np.greater(args[0].value, args[1].value)
+        else:
+            x = InferValue.expanddims([args[0]], node)
+            y = InferValue.expanddims([args[1]], node)
+            value = Range(name="equal", dtype=10)
+            return value, z3.Or(
+                z3.And(x.left > y.right, z3.Not(value.left), value.right),
+                z3.And(x.right <= y.left, value.left, z3.Not(value.right)),
+                z3.And(z3.Not(z3.Or(x.left > y.right, x.right <= y.left)), value.left, value.right)
+            )
+
+    @staticmethod
+    def greaterequal(args: list, node):
+        assert len(args) == 2
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            return np.greater_equal(args[0].value, args[1].value)
+        else:
+            x = InferValue.expanddims([args[0]], node)
+            y = InferValue.expanddims([args[1]], node)
+            value = Range(name="equal", dtype=10)
+            return value, z3.Or(
+                z3.And(x.left >= y.right, z3.Not(value.left), value.right),
+                z3.And(x.right < y.left, value.left, z3.Not(value.right)),
+                z3.And(z3.Not(z3.Or(x.left >= y.right, x.right < y.left)), value.left, value.right)
+            )
+
+    @staticmethod
     def identity(args: list, node):
         assert len(args) == 1
         return args[0].value
@@ -210,6 +234,21 @@ class InferValue:
         return getattr(parse_format_text, node.op.lower())(attrs)
 
     @staticmethod
+    def less(args: list, node):
+        assert len(args) == 2
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            return np.less(args[0].value, args[1].value)
+        else:
+            x = InferValue.expanddims([args[0]], node)
+            y = InferValue.expanddims([args[1]], node)
+            value = Range(name="equal", dtype=10)
+            return value, z3.Or(
+                z3.And(x.right < y.left, z3.Not(value.left), value.right),
+                z3.And(x.left >= y.right, value.left, z3.Not(value.right)),
+                z3.And(z3.Not(z3.Or(x.right < y.left, x.left >= y.right)), value.left, value.right)
+            )
+
+    @staticmethod
     def log(args: list, node):
         """the size is same"""
         assert len(args) == 1
@@ -220,10 +259,23 @@ class InferValue:
 
     @staticmethod
     def logicaland(args: list, node):
-        assert len(args) == 1
+        assert len(args) == 2
+        if args[0].value is None or args[1].value is None:
+            return
         value = Range(name="logicaland", dtype=10)
-        return value, Solver.condition(args[0].value, z3.And(value.left, z3.Not(value.right)),
-                                       z3.And(z3.Not(value.left), value.right), True)
+        tmp = Range(name="logicaland_tmp", dtype=10)
+        cond1 = z3.And(args[0].value.left, args[1].value.left, z3.Not(args[0].value.right),
+                       z3.Not(args[1].value.right))
+        cond2 = z3.And(z3.Not(args[0].value.left), z3.Not(args[1].value.left), args[0].value.right,
+                       args[1].value.right)
+        return value, z3.And(Solver.condition(tmp, z3.And(value.left, z3.Not(value.right)),
+                                              z3.And(z3.Not(value.left), value.right), True),
+                             z3.Or(z3.And(cond1, tmp.left, z3.Not(tmp.right)),
+                                   z3.And(cond2, tmp.right, z3.Not(tmp.left)),
+                                   z3.And(
+                                       z3.Not(z3.Or(cond1, cond2)),
+                                       tmp.left, tmp.right
+                                   )))
 
     @staticmethod
     def logicalnot(args: list, node):
@@ -271,6 +323,10 @@ class InferValue:
     @staticmethod
     def maximum(args: list, node):
         return InferValue.max(args, node)
+
+    @staticmethod
+    def merge(args: list, node):
+        return InferValue.pack(args, node)
 
     @staticmethod
     def min(args: list, node):
@@ -335,7 +391,30 @@ class InferValue:
 
     @staticmethod
     def pack(args: list, node):
-        return InferValue.concatv2(args, node)
+        try:
+            maxs = [args[i].value.right if isinstance(args[i].value, Range) else resolve_type(np.max(args[i].value)) for
+                    i in range(len(args))]
+            mins = [args[i].value.left if isinstance(args[i].value, Range) else resolve_type(np.min(args[i].value)) for
+                    i in range(len(args))]
+            if None in maxs or None in mins:
+                return None
+            try:
+                return Range(left=min(mins), right=max(maxs))
+            except:
+                value = Range(name="pack", dtype=args[0].dtype)
+                return value, z3.And(Solver.min(value.left, mins), Solver.max(value.right, maxs))
+        except:
+            # boolean
+            has_zero = []
+            has_one = []
+            for i in range(len(args)):
+                if isinstance(args[i].value, Range):
+                    has_zero.append(args[i].value.left)
+                    has_one.append(args[i].value.right)
+                else:
+                    has_zero.append(not np.all(args[i].value))
+                    has_one.append(np.any(args[i].value))
+            return Range(left=z3.Or(has_zero), right=z3.Or(has_one))
 
     @staticmethod
     def pad(args: list, node):
@@ -398,7 +477,7 @@ class InferValue:
     def select(args: list, node):
         assert len(args) == 3
         if not isinstance(args[0].value, Range):
-            print(args[0].value)
+            # print(args[0].value)
             raise NotImplementedError("not implemented when the condition is known")
         x = InferValue.expanddims([args[1]], node)
         y = InferValue.expanddims([args[2]], node)
@@ -520,6 +599,16 @@ class InferValue:
         return getattr(parse_format_text, node.op.lower())(attrs)
 
     @staticmethod
+    def where(args: list, node):
+        assert len(args) == 1
+        try:
+            x = np.max(args[0].size)
+            return Range(left=0, right=x - 1)
+        except:
+            x = Solver.add_variable("where", 3)
+            return Range(left=0, right=x - 1), x > 1
+
+    @staticmethod
     def zeroslike(args: list, node):
         assert len(args) == 1
         return Range(left=0, right=0)
@@ -529,20 +618,8 @@ class InferValue:
         warnings.warn("floormod not implemented", RuntimeWarning)
 
     @staticmethod
-    def greater(args: list, node):
-        warnings.warn("greater not implemented", RuntimeWarning)
-
-    @staticmethod
-    def greaterequal(args: list, node):
-        warnings.warn("greaterequal not implemented", RuntimeWarning)
-
-    @staticmethod
     def iteratortostringhandle(args: list, node):
         warnings.warn("iteratortostringhandle not implemented", RuntimeWarning)
-
-    @staticmethod
-    def less(args: list, node):
-        warnings.warn("less not implemented", RuntimeWarning)
 
     @staticmethod
     def noop(args: list, node):

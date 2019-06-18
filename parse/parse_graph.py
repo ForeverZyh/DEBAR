@@ -39,7 +39,7 @@ class UnionSet:
 
 
 class Graph:
-    def __init__(self, filename):
+    def __init__(self, filename, verbose_file=None):
         with open(filename) as f:
             txt = f.read()
             self.graph_def = text_format.Parse(txt, tf.GraphDef())
@@ -64,6 +64,13 @@ class Graph:
         self.tensor_to_op = {}
         self.nodes_in_main_clique_topology = {}
         self.build()
+        self.file = None if verbose_file is None else open(verbose_file, "w")
+
+    def write(self, x):
+        if self.file is None:
+            print(x)
+        else:
+            self.file.write(str(x) + "\n")
 
     def build(self):
         for node in self.graph_def.node:
@@ -118,9 +125,6 @@ class Graph:
                 self.unique_clique.append(node)
                 max_rank = max(max_rank, self.f.rank[node])
 
-        # f = open("./mainclique.txt", "w")
-        # f.write(str(self.f.rank))
-
         for node_name in self.unique_clique:
             if max_rank == self.f.rank[node_name]:
                 self.main_clique = node_name
@@ -137,9 +141,6 @@ class Graph:
                     q.put(node_name)
                 nodes_in_main_clique.add(node_name)
 
-        # f = open("./mainclique.txt", "w")
-        # f.write(str(nodes_in_main_clique))
-
         while not q.empty():
             son = q.get()
             nodes_in_main_clique.remove(son)
@@ -151,11 +152,8 @@ class Graph:
                     if node_inds[next_node_name] == 0:
                         q.put(next_node_name)
 
-        # f = open("./mainclique.txt", "w")
-        # f.write(str(node_inds))
-
     def backward_slice(self, node, visited):  # return a list of nodes
-        print(self.node_by_name[node].op, " : ", self.graph_backward[node])
+        # print(self.node_by_name[node].op, " : ", self.graph_backward[node])
         visited.add(node)
         ret = [node]
         for (in_node, _) in self.graph_backward[node]:
@@ -195,10 +193,10 @@ class Graph:
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
             if son in self.node_visited:
-                print(son, "passed")
+                self.write(str(son) + "passed")
                 continue
 
-            print(son)
+            self.write(son)
             self.node_visited.add(son)
             parents_aps = []
             all_none = True
@@ -235,7 +233,7 @@ class Graph:
             else:
                 self.node_output[son].value = temp
 
-            print(self.node_output[son])
+            self.write(self.node_output[son])
 
         ret_constraints = []
         for son in nodes_interested[:-1]:

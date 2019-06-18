@@ -7,7 +7,7 @@ import math
 # rule = ["Log", "Exp", "RealDiv", "Sqrt"]
 rule = ["RealDiv"]
 if __name__ == "__main__":
-    graph = Graph("./real.pbtxt")
+    graph = Graph("./real.pbtxt", "verbose.txt")
     # graph.backward_slice("Log", set())
     # graph.draw(graph.backward_slice("SpatialTransformer/_transform/_interpolate/truediv", set()), "interested1")
     # graph.draw(graph.nodes_in_main_clique_topology, "show_real")
