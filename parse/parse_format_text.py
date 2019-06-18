@@ -13,7 +13,7 @@ def const(attrs):
 
 def iteratorv2(attrs):
     dtypes = attrs["output_types"].list.type
-    print(dtypes)
+    # print(dtypes)
     value = [Range(name="iteratorv2", dtype=dtype) for dtype in dtypes]
     return value
 

@@ -3,11 +3,21 @@ import z3
 from solver import Range
 from utils import OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 import math
+import sys
 
-# rule = ["Log", "Exp", "RealDiv", "Sqrt"]
-rule = ["RealDiv"]
+
+try:
+    assert len(sys.argv) == 2
+    pbtxt = sys.argv[1]
+except:
+    print(
+        "Please run 'python test_script PBTEXT_FILENAME'.\nAborted...")
+    exit(1)
+
+rule = ["Log", "Exp", "RealDiv", "Sqrt"]
+# rule = ["RealDiv"]
 if __name__ == "__main__":
-    graph = Graph("./real.pbtxt", "verbose.txt")
+    graph = Graph(pbtxt, "verbose.txt")
     # graph.backward_slice("Log", set())
     # graph.draw(graph.backward_slice("SpatialTransformer/_transform/_interpolate/truediv", set()), "interested1")
     # graph.draw(graph.nodes_in_main_clique_topology, "show_real")
