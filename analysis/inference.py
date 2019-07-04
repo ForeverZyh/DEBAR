@@ -94,15 +94,15 @@ class InferValue:
                 except:
                     return Range(left=float(np.min(args[0].value)), right=float(np.max(args[0].value)))
         elif int(attrs['SrcT'].type) in [10] and int(attrs['DstT'].type) in [1]:
-            value = Range(name="cast", dtype=1)
-            return value, Solver.condition(args[0].value, z3.And(value.left == 0, value.right == 0),
-                                           z3.And(value.left == 1, value.right == 1),
-                                           z3.And(value.left == 0, value.right == 1))
+            return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
+                                    z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 0)),
+                         right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
+                                     z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 1)))
         elif int(attrs['SrcT'].type) in [10] and int(attrs['DstT'].type) in [3]:
-            value = Range(name="cast", dtype=3)
-            return value, Solver.condition(args[0].value, z3.And(value.left == 0, value.right == 0),
-                                           z3.And(value.left == 1, value.right == 1),
-                                           z3.And(value.left == 0, value.right == 1))
+            return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
+                                    z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 0)),
+                         right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
+                                     z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 1)))
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
 
