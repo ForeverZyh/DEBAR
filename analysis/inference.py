@@ -9,6 +9,8 @@ import z3
 from utils import OVERFLOW_D, UNDERFLOW_D, OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 from utils import resolve_type
 
+turn_on_bool = False
+
 
 def real_size(a, b):
     if str(a) == "?" and str(b) == "?":
@@ -39,6 +41,8 @@ class InferValue:
 
     @staticmethod
     def all(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
         assert len(args) == 2
         value = Range(name="all", dtype=10)
         return value, Solver.condition(args[0].value, z3.And(value.left, z3.Not(value.right)),
@@ -46,6 +50,8 @@ class InferValue:
 
     @staticmethod
     def any(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
         assert len(args) == 2
         value = Range(name="any", dtype=10)
         return value, Solver.condition(args[0].value, z3.And(value.left, z3.Not(value.right)),
@@ -90,6 +96,11 @@ class InferValue:
             return value, Solver.condition(args[0].value, z3.And(value.left == 0, value.right == 0),
                                            z3.And(value.left == 1, value.right == 1),
                                            z3.And(value.left == 0, value.right == 1))
+        elif int(attrs['SrcT'].type) in [10] and int(attrs['DstT'].type) in [3]:
+            value = Range(name="cast", dtype=3)
+            return value, Solver.condition(args[0].value, z3.And(value.left == 0, value.right == 0),
+                                           z3.And(value.left == 1, value.right == 1),
+                                           z3.And(value.left == 0, value.right == 1))
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
 
@@ -128,6 +139,8 @@ class InferValue:
 
     @staticmethod
     def equal(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
         assert len(args) == 2
         if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             return np.equal(args[0].value, args[1].value)
@@ -189,6 +202,8 @@ class InferValue:
 
     @staticmethod
     def greater(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
         assert len(args) == 2
         if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             return np.greater(args[0].value, args[1].value)
@@ -204,6 +219,8 @@ class InferValue:
 
     @staticmethod
     def greaterequal(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
         assert len(args) == 2
         if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             return np.greater_equal(args[0].value, args[1].value)
@@ -235,6 +252,8 @@ class InferValue:
 
     @staticmethod
     def less(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
         assert len(args) == 2
         if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             return np.less(args[0].value, args[1].value)
@@ -248,17 +267,19 @@ class InferValue:
                 z3.And(z3.Not(z3.Or(x.right < y.left, x.left >= y.right)), value.left, value.right)
             )
 
-    @staticmethod
-    def log(args: list, node):
-        """the size is same"""
-        assert len(args) == 1
-        if isinstance(args[0].value, Range):
-            return math.log(args[0].value.left), math.log(args[0].value.right)
-        else:
-            return math.log(args[0].value)
+    # @staticmethod
+    # def log(args: list, node):
+    #     """the size is same"""
+    #     assert len(args) == 1
+    #     if isinstance(args[0].value, Range):
+    #         return math.log(args[0].value.left), math.log(args[0].value.right)
+    #     else:
+    #         return math.log(args[0].value)
 
     @staticmethod
     def logicaland(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
         assert len(args) == 2
         if args[0].value is None or args[1].value is None:
             return
@@ -279,6 +300,8 @@ class InferValue:
 
     @staticmethod
     def logicalnot(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
         assert len(args) == 1
         value = Range(name="logicalnot", dtype=10)
         return value, Solver.condition(args[0].value, z3.And(z3.Not(value.left), value.right),
@@ -482,6 +505,8 @@ class InferValue:
         x = InferValue.expanddims([args[1]], node)
         y = InferValue.expanddims([args[2]], node)
         value = Range(name="select", dtype=args[1].dtype)
+        if not turn_on_bool:
+            return value, z3.And(Solver.min(value.left, [x.left, y.left]), Solver.max(value.right, [x.right, y.right]))
         return value, z3.Or(
             z3.And(args[0].value.left, z3.Not(args[0].value.right), value.left == x.left, value.right == x.right),
             z3.And(args[0].value.right, z3.Not(args[0].value.left), value.left == y.left, value.right == y.right),
