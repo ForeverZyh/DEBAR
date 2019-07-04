@@ -44,18 +44,20 @@ class InferValue:
         if not turn_on_bool:
             return Range(left=True, right=True)
         assert len(args) == 2
-        value = Range(name="all", dtype=10)
-        return value, Solver.condition(args[0].value, z3.And(value.left, z3.Not(value.right)),
-                                       z3.And(z3.Not(value.left), value.right), True)
+        return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), True,
+                                z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), False, True)),
+                     right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), False,
+                                 z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), True, True)))
 
     @staticmethod
     def any(args: list, node):
         if not turn_on_bool:
             return Range(left=True, right=True)
         assert len(args) == 2
-        value = Range(name="any", dtype=10)
-        return value, Solver.condition(args[0].value, z3.And(value.left, z3.Not(value.right)),
-                                       z3.And(z3.Not(value.left), value.right), True)
+        return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), True,
+                                z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), False, True)),
+                     right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), False,
+                                 z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), True, True)))
 
     @staticmethod
     def argmax(args: list, node):
@@ -147,11 +149,8 @@ class InferValue:
         else:
             x = InferValue.expanddims([args[0]], node)
             y = InferValue.expanddims([args[1]], node)
-            value = Range(name="equal", dtype=10)
-            return value, z3.Or(
-                z3.And(x.left == y.left, x.right == y.right, x.left == x.right, z3.Not(value.left), value.right),
-                z3.And(z3.Not(z3.And(x.left == y.left, x.right == y.right, x.left == x.right)), value.left,
-                       value.right))
+            condition = z3.And(x.left == y.left, x.right == y.right, x.left == x.right)
+            return Range(left=z3.If(condition, False, True), right=z3.If(condition, True, True))
 
     @staticmethod
     def expanddims(args: list, node):
@@ -210,12 +209,9 @@ class InferValue:
         else:
             x = InferValue.expanddims([args[0]], node)
             y = InferValue.expanddims([args[1]], node)
-            value = Range(name="equal", dtype=10)
-            return value, z3.Or(
-                z3.And(x.left > y.right, z3.Not(value.left), value.right),
-                z3.And(x.right <= y.left, value.left, z3.Not(value.right)),
-                z3.And(z3.Not(z3.Or(x.left > y.right, x.right <= y.left)), value.left, value.right)
-            )
+            return Range(left=z3.If(x.left > y.right, False, z3.If(x.right <= y.left, True, True)),
+                         right=z3.If(x.left > y.right, True, z3.If(x.right <= y.left, False, True))
+                         )
 
     @staticmethod
     def greaterequal(args: list, node):
@@ -227,12 +223,9 @@ class InferValue:
         else:
             x = InferValue.expanddims([args[0]], node)
             y = InferValue.expanddims([args[1]], node)
-            value = Range(name="equal", dtype=10)
-            return value, z3.Or(
-                z3.And(x.left >= y.right, z3.Not(value.left), value.right),
-                z3.And(x.right < y.left, value.left, z3.Not(value.right)),
-                z3.And(z3.Not(z3.Or(x.left >= y.right, x.right < y.left)), value.left, value.right)
-            )
+            return Range(left=z3.If(x.left >= y.right, False, z3.If(x.right < y.left, True, True)),
+                         right=z3.If(x.left >= y.right, True, z3.If(x.right < y.left, False, True))
+                         )
 
     @staticmethod
     def identity(args: list, node):
@@ -260,12 +253,9 @@ class InferValue:
         else:
             x = InferValue.expanddims([args[0]], node)
             y = InferValue.expanddims([args[1]], node)
-            value = Range(name="equal", dtype=10)
-            return value, z3.Or(
-                z3.And(x.right < y.left, z3.Not(value.left), value.right),
-                z3.And(x.left >= y.right, value.left, z3.Not(value.right)),
-                z3.And(z3.Not(z3.Or(x.right < y.left, x.left >= y.right)), value.left, value.right)
-            )
+            return Range(left=z3.If(x.left >= y.right, True, z3.If(x.right < y.left, False, True)),
+                         right=z3.If(x.left >= y.right, False, z3.If(x.right < y.left, True, True))
+                         )
 
     # @staticmethod
     # def log(args: list, node):
@@ -283,29 +273,22 @@ class InferValue:
         assert len(args) == 2
         if args[0].value is None or args[1].value is None:
             return
-        value = Range(name="logicaland", dtype=10)
-        tmp = Range(name="logicaland_tmp", dtype=10)
-        cond1 = z3.And(args[0].value.left, args[1].value.left, z3.Not(args[0].value.right),
-                       z3.Not(args[1].value.right))
+        cond1 = z3.Or(z3.And(args[0].value.left, z3.Not(args[0].value.right)),
+                      z3.And(args[1].value.left, z3.Not(args[1].value.right)))
         cond2 = z3.And(z3.Not(args[0].value.left), z3.Not(args[1].value.left), args[0].value.right,
                        args[1].value.right)
-        return value, z3.And(Solver.condition(tmp, z3.And(value.left, z3.Not(value.right)),
-                                              z3.And(z3.Not(value.left), value.right), True),
-                             z3.Or(z3.And(cond1, tmp.left, z3.Not(tmp.right)),
-                                   z3.And(cond2, tmp.right, z3.Not(tmp.left)),
-                                   z3.And(
-                                       z3.Not(z3.Or(cond1, cond2)),
-                                       tmp.left, tmp.right
-                                   )))
+        return Range(left=z3.If(cond1, True, z3.If(cond2, False, True)),
+                     right=z3.If(cond1, False, z3.If(cond2, True, True)))
 
     @staticmethod
     def logicalnot(args: list, node):
         if not turn_on_bool:
             return Range(left=True, right=True)
         assert len(args) == 1
-        value = Range(name="logicalnot", dtype=10)
-        return value, Solver.condition(args[0].value, z3.And(z3.Not(value.left), value.right),
-                                       z3.And(value.left, z3.Not(value.right)), True)
+        return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), False,
+                                z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), True, True)),
+                     right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), True,
+                                 z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), False, True)))
 
     @staticmethod
     def matmul(args: list, node):
@@ -504,14 +487,14 @@ class InferValue:
             raise NotImplementedError("not implemented when the condition is known")
         x = InferValue.expanddims([args[1]], node)
         y = InferValue.expanddims([args[2]], node)
-        value = Range(name="select", dtype=args[1].dtype)
         if not turn_on_bool:
-            return value, z3.And(Solver.min(value.left, [x.left, y.left]), Solver.max(value.right, [x.right, y.right]))
-        return value, z3.Or(
-            z3.And(args[0].value.left, z3.Not(args[0].value.right), value.left == x.left, value.right == x.right),
-            z3.And(args[0].value.right, z3.Not(args[0].value.left), value.left == y.left, value.right == y.right),
-            z3.And(args[0].value.left, args[0].value.right,
-                   Solver.min(value.left, [x.left, y.left]), Solver.max(value.right, [x.right, y.right])))
+            return Range(left=z3.If(x.left < y.left, x.left, y.left), right=z3.If(x.right > y.right, x.right, y.right))
+        return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), x.left,
+                                z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), y.left,
+                                      z3.If(x.left < y.left, x.left, y.left))),
+                     right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), x.right,
+                                 z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), y.right,
+                                       z3.If(x.right > y.right, x.right, y.right))))
 
     @staticmethod
     def shape(args: list, node):

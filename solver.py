@@ -37,11 +37,10 @@ class Solver:
         # except:
         #     print([type(y) for y in ys])
 
-    @staticmethod
-    def condition(pred, all_zero, all_one, unknown):
-        return z3.Or(z3.And(pred.left, z3.Not(pred.right), all_zero),
-                     z3.And(pred.right, z3.Not(pred.left), all_one),
-                     z3.And(pred.left, pred.right, unknown))
+    # @staticmethod
+    # def condition(pred, all_zero, all_one, unknown):
+    #     return z3.If(z3.And(pred.left, z3.Not(pred.right)), all_zero,
+    #                  z3.If(z3.And(pred.right, z3.Not(pred.left)), all_one, unknown))
 
 
 class Range:
