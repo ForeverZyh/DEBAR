@@ -103,6 +103,11 @@ class InferValue:
                                     z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 0)),
                          right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
                                      z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 1)))
+        elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [10]:
+            return Range(left=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True,
+                                    z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False, True)),
+                         right=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False,
+                                    z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
 
