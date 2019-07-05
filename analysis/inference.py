@@ -108,6 +108,8 @@ class InferValue:
                                     z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False, True)),
                          right=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False,
                                      z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
+        elif int(attrs['SrcT'].type) in [9] and int(attrs['DstT'].type) in [3]:
+            return args[0].value
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
 
@@ -143,6 +145,12 @@ class InferValue:
                 args[0].value.right * args[1].value.left * ind, args[0].value.right * args[1].value.right * ind]
         return value, z3.And(Solver.min(value.left, ends),
                              Solver.max(value.right, ends))
+
+    @staticmethod
+    def dynamicstitch(args: list, node):
+        assert len(args) % 2 == 0
+        datas = args[len(args) // 2:]
+        return InferValue.pack(datas, node)
 
     @staticmethod
     def equal(args: list, node):
@@ -297,6 +305,20 @@ class InferValue:
                                  z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), False, True)))
 
     @staticmethod
+    def logicalor(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
+        assert len(args) == 2
+        if args[0].value is None or args[1].value is None:
+            return
+        cond1 = z3.Or(z3.And(args[0].value.right, z3.Not(args[0].value.left)),
+                      z3.And(args[1].value.right, z3.Not(args[1].value.left)))
+        cond2 = z3.And(z3.Not(args[0].value.right), z3.Not(args[1].value.right), args[0].value.left,
+                       args[1].value.left)
+        return Range(left=z3.If(cond1, False, z3.If(cond2, True, True)),
+                     right=z3.If(cond1, True, z3.If(cond2, False, True)))
+
+    @staticmethod
     def matmul(args: list, node):
         assert len(args) == 2 and len(args[0].size) == len(args[1].size)
         for i in range(len(args[0].size) - 2):
@@ -335,6 +357,11 @@ class InferValue:
     @staticmethod
     def maximum(args: list, node):
         return InferValue.max(args, node)
+
+    @staticmethod
+    def mean(args: list, node):
+        assert len(args) == 2
+        return InferValue.expanddims(args, node)
 
     @staticmethod
     def merge(args: list, node):
@@ -445,6 +472,11 @@ class InferValue:
         return getattr(parse_format_text, node.op.lower())(attrs)
 
     @staticmethod
+    def randomshuffle(args: list, node):
+        assert len(args) == 1
+        return InferValue.expanddims(args, node)
+
+    @staticmethod
     def randomuniform(args: list, node):
         assert len(args) == 1
         value = Range(name="randomuniform", dtype=1)
@@ -518,6 +550,20 @@ class InferValue:
             return value
 
     @staticmethod
+    def size(args: list, node):
+        assert len(args) == 1
+        try:
+            ele = 1
+            for x in args[0].size:
+                ele *= int(x)
+            if ele < 0:
+                return Range(left=0, right=Solver.add_variable("shape_R", 3))
+            else:
+                return ele
+        except:
+            return Range(left=0, right=Solver.add_variable("shape_R", 3))
+
+    @staticmethod
     def slice(args: list, node):
         return InferValue.expanddims(args, node)
 
@@ -583,8 +629,12 @@ class InferValue:
         if args[0].value is None:
             return None
         if isinstance(args[0].value, Range):
-            ind = int(args[0].size[args[1].value])
-            return Range(left=args[0].value.left * ind, right=args[0].value.right * ind)
+            try:
+                ind = int(args[0].size[int(args[1].value)])
+                return Range(left=args[0].value.left * ind, right=args[0].value.right * ind)
+            except:
+                ind = Range(name="sum_ind", dtype=3)
+                return InferValue.mul([args[0], AbstractInterpretation(value=ind, dtype=3, size=[])], node)
         else:
             return np.sum(args[0].value, axis=args[1].value)
 
