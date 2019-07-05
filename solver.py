@@ -25,6 +25,10 @@ class Solver:
     def max(x, ys_):
         ys = list(map(resolve_type, ys_))
         # try:
+        try:
+            return x == max(ys)
+        except:
+            pass
         if len(ys) == 1:
             return x == ys[0]
         if len(ys) == 2:
@@ -37,8 +41,12 @@ class Solver:
     def min(x, ys_):
         ys = list(map(resolve_type, ys_))
         # try:
+        try:
+            return x == min(ys)
+        except:
+            pass
         if len(ys) == 1:
-            return ys[0]
+            return x == ys[0]
         if len(ys) == 2:
             return x == z3.If(ys[0] < ys[1], ys[0], ys[1])
         return z3.And(z3.Or([x == y for y in ys]), z3.And([x <= y for y in ys]))
