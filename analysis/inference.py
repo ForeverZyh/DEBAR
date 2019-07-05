@@ -107,7 +107,7 @@ class InferValue:
             return Range(left=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True,
                                     z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False, True)),
                          right=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False,
-                                    z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
+                                     z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
 
@@ -191,11 +191,12 @@ class InferValue:
         ends_scale_variance = [scale.left / variance.left, scale.right / variance.left, scale.left / variance.right,
                                scale.right / variance.right]
 
-        ends = [(x.left - mean.right) * end + offset.left for end in ends_scale_variance] + [
-            (x.right - mean.left) * end + offset.right for end in ends_scale_variance]
+        ends = [(x.left - mean.right) * end for end in ends_scale_variance] + [
+            (x.right - mean.left) * end for end in ends_scale_variance]
 
         value = Range(name="fusedbatchnorm", dtype=1)
-        return [value, Range(name="fusedbatchnorm_mean", dtype=1), Range(name="fusedbatchnorm_variance", dtype=1),
+        return [Range(left=value.left + offset.left, right=value.right + offset.right),
+                Range(name="fusedbatchnorm_mean", dtype=1), Range(name="fusedbatchnorm_variance", dtype=1),
                 Range(name="fusedbatchnorm_rs1", dtype=1), Range(name="fusedbatchnorm_rs2", dtype=1)], z3.And(
             Solver.min(value.left, ends), Solver.max(value.right, ends))
 
@@ -337,7 +338,13 @@ class InferValue:
 
     @staticmethod
     def merge(args: list, node):
-        return InferValue.pack(args, node)
+        tmp = InferValue.pack(args, node)
+        max_index = int(node.attr["N"].i)
+        return_index = Range(left=0, right=max_index - 1)
+        if isinstance(tmp, tuple):
+            return [tmp[0], return_index], tmp[1]
+        else:
+            return [tmp, return_index]
 
     @staticmethod
     def min(args: list, node):
