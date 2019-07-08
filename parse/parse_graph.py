@@ -10,6 +10,7 @@ import warnings
 import z3
 from solver import meet, check_range_const
 from itertools import product
+from solver import Range
 
 
 class UnionSet:
@@ -131,26 +132,48 @@ class Graph:
 
         node_inds = {}
         q = queue.Queue()
-
         nodes_in_main_clique = set()
         cnt = 0
         for node_name in self.f.f:
             node_inds[node_name] = 0 if node_name not in self.graph_backward else len(self.graph_backward[node_name])
             if self.f.find(node_name) == self.main_clique:
-                if node_inds[node_name] == 0:
-                    q.put(node_name)
                 nodes_in_main_clique.add(node_name)
 
-        while not q.empty():
-            son = q.get()
-            nodes_in_main_clique.remove(son)
-            self.nodes_in_main_clique_topology[son] = cnt
-            cnt += 1
-            if son in self.graph_forward:
-                for (next_node_name, _) in self.graph_forward[son]:
-                    node_inds[next_node_name] -= 1
-                    if node_inds[next_node_name] == 0:
-                        q.put(next_node_name)
+        for node_name in nodes_in_main_clique:
+            if node_inds[node_name] == 0:
+                q.put(node_name)
+
+        while True:
+            while not q.empty():
+                son = q.get()
+                nodes_in_main_clique.remove(son)
+                self.nodes_in_main_clique_topology[son] = cnt
+                cnt += 1
+                if son in self.graph_forward:
+                    for (next_node_name, _) in self.graph_forward[son]:
+                        node_inds[next_node_name] -= 1
+                        if node_inds[next_node_name] == 0 and next_node_name in nodes_in_main_clique:
+                            q.put(next_node_name)
+
+            if len(nodes_in_main_clique) == 0:
+                break
+
+            min_ind = None
+            for node_name in nodes_in_main_clique:
+                flag = False
+                if node_name in self.graph_backward:
+                    for (in_node_name, _) in self.graph_backward[node_name]:
+                        if self.edge_index[(in_node_name, node_name)] is not None:
+                            flag = True
+                            break
+                if flag:
+                    continue
+                if self.node_by_name[node_name].op == "Merge":
+                    if min_ind is None or node_inds[node_name] < node_inds[min_ind]:
+                        min_ind = node_name
+
+            assert min_ind is not None
+            q.put(min_ind)
 
     def backward_slice(self, node, visited):  # return a list of nodes
         # print(self.node_by_name[node].op, " : ", self.graph_backward[node])
@@ -180,16 +203,15 @@ class Graph:
     def forward_analysis(self, node_interested, appended=None):
         nodes_interested = self.backward_slice(node_interested.name, set())
         for node in nodes_interested:
-            if "gradient" in node.lower():
+            if "gradient" in node.lower() and "stopgradient" not in node.lower():
                 print("----------Gradients are not interested----------")
                 return None
-        try:
-            nodes_interested.sort(key=lambda x: self.nodes_in_main_clique_topology[x])
-        except:
-            print("----------Analysis failed due to loop----------")
-            return None
+
+        nodes_interested.sort(key=lambda x: self.nodes_in_main_clique_topology[x])
         if appended is not None:
             nodes_interested.append(appended.name)
+
+        # wait_for_filling = set()
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
             if son in self.node_visited:
@@ -202,6 +224,17 @@ class Graph:
             all_none = True
             for (in_node_name, is_control) in self.graph_backward[son]:
                 if not is_control:
+                    if in_node_name not in self.node_visited:
+                        # there is a loop, and the node is "Merge"
+                        # # we assume that the node only have single output, i.e., the node should not be indexed
+                        # if in_node_name not in wait_for_filling:
+                        #     self.node_output[in_node_name].value = Range(name=in_node_name + "_loop",
+                        #                                                  dtype=self.node_output[in_node_name].dtype)
+                        #     wait_for_filling.add(in_node_name)
+
+                        pass
+                        #TODO write code for merge and nextiteration
+
                     parents_aps.append(self.node_output[in_node_name].index_of(self.edge_index[(in_node_name, son)]))
                     all_none &= parents_aps[-1].has_none()
 
@@ -227,11 +260,20 @@ class Graph:
 
             if new_size is not None:
                 self.node_output[son].size = new_size
-            if isinstance(temp, tuple):
-                self.node_output[son].value = temp[0]
-                self.node_output[son].constraints = temp[1]
+            if son in wait_for_filling:
+                if isinstance(temp, tuple):
+                    self.node_output[son].constraints = z3.And(temp[1],
+                                                               self.node_output[son].value.left == temp[0].left,
+                                                               self.node_output[son].value.right == temp[0].right)
+                else:
+                    self.node_output[son].constraints = z3.And(self.node_output[son].value.left == temp.left,
+                                                               self.node_output[son].value.right == temp.right)
             else:
-                self.node_output[son].value = temp
+                if isinstance(temp, tuple):
+                    self.node_output[son].value = temp[0]
+                    self.node_output[son].constraints = temp[1]
+                else:
+                    self.node_output[son].value = temp
 
             self.write(self.node_output[son])
 

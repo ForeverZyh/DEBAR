@@ -19,10 +19,14 @@ def iteratorv2(attrs):
 
 def variablev2(attrs):
     dtype = attrs["dtype"].type
-    value = Range(name="variablev2", dtype=dtype)
+    # value = Range(name="variablev2", dtype=dtype)
     # return value, value.left <= value.right
     # return value, z3.And([value.left <= value.right, value.left >= -1, value.right <= 1])
-    return value, z3.And([value.left == -1, value.right == 1])
+    # return value, z3.And([value.left == -1, value.right == 1])
+    if dtype in [1]:
+        return Range(left=-1, right=1)
+    else:
+        return Range(name="variablev2", dtype=dtype)
 
 
 def oneshotiterator(attrs):

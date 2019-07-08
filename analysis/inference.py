@@ -153,6 +153,11 @@ class InferValue:
         return InferValue.pack(datas, node)
 
     @staticmethod
+    def enter(args: list, node):
+        assert len(args) == 1
+        return args[0].value
+
+    @staticmethod
     def equal(args: list, node):
         if not turn_on_bool:
             return Range(left=True, right=True)
@@ -189,24 +194,56 @@ class InferValue:
         assert len(args) == 5
         # x, scale, offset, mean, variance
         epsilon = float(node.attr['epsilon'].f)
+        is_training = node.attr["is_training"].b
 
         x = args[0].value
-        scale = args[1].value
-        offset = args[2].value
-        mean = args[3].value
-        variance = args[4].value + epsilon
+        mean = args[1].value
+        variance = args[2].value
+        offset = args[3].value
+        scale = args[4].value + epsilon
 
-        ends_scale_variance = [scale.left / variance.left, scale.right / variance.left, scale.left / variance.right,
-                               scale.right / variance.right]
+        if not is_training:
+            if isinstance(scale, Range) and isinstance(variance, Range):
+                ends_scale_variance = [scale.left / variance.left, scale.right / variance.left,
+                                       scale.left / variance.right,
+                                       scale.right / variance.right]
+            elif isinstance(variance, Range):
+                ends_scale_variance = [float(scale) / variance.left, float(scale) / variance.right]
+            elif isinstance(scale, Range):
+                ends_scale_variance = [scale.left / float(variance), scale.right / float(variance)]
+            else:
+                ends_scale_variance = [float(scale) / float(variance)]
 
-        ends = [(x.left - mean.right) * end for end in ends_scale_variance] + [
-            (x.right - mean.left) * end for end in ends_scale_variance]
+            if isinstance(mean, Range):
+                ends = [(x.left - mean.right) * end for end in ends_scale_variance] + [
+                    (x.right - mean.left) * end for end in ends_scale_variance]
+            else:
+                ends = [(x.left - float(mean)) * end for end in ends_scale_variance] + [
+                    (x.right - float(mean)) * end for end in ends_scale_variance]
 
-        value = Range(name="fusedbatchnorm", dtype=1)
-        return [Range(left=value.left + offset.left, right=value.right + offset.right),
-                Range(name="fusedbatchnorm_mean", dtype=1), Range(name="fusedbatchnorm_variance", dtype=1),
-                Range(name="fusedbatchnorm_rs1", dtype=1), Range(name="fusedbatchnorm_rs2", dtype=1)], z3.And(
-            Solver.min(value.left, ends), Solver.max(value.right, ends))
+            value = Range(name="fusedbatchnorm", dtype=1)
+            return [Range(left=value.left + offset.left, right=value.right + offset.right),
+                    Range(name="fusedbatchnorm_mean", dtype=1), Range(name="fusedbatchnorm_variance", dtype=1),
+                    Range(name="fusedbatchnorm_rs1", dtype=1), Range(name="fusedbatchnorm_rs2", dtype=1)], z3.And(
+                Solver.min(value.left, ends), Solver.max(value.right, ends))
+        else:
+            if isinstance(variance, Range):
+                ends_scale_variance = [1 / variance.left, 1 / variance.right]
+            else:
+                ends_scale_variance = [float(variance)]
+
+            if isinstance(mean, Range):
+                ends = [(x.left - mean.right) * end for end in ends_scale_variance] + [
+                    (x.right - mean.left) * end for end in ends_scale_variance]
+            else:
+                ends = [(x.left - float(mean)) * end for end in ends_scale_variance] + [
+                    (x.right - float(mean)) * end for end in ends_scale_variance]
+
+            value = Range(name="fusedbatchnorm", dtype=1)
+            return [value,
+                    Range(name="fusedbatchnorm_mean", dtype=1), Range(name="fusedbatchnorm_variance", dtype=1),
+                    Range(name="fusedbatchnorm_rs1", dtype=1), Range(name="fusedbatchnorm_rs2", dtype=1)], z3.And(
+                Solver.min(value.left, ends), Solver.max(value.right, ends))
 
     @staticmethod
     def gatherv2(args: list, node):
@@ -271,15 +308,6 @@ class InferValue:
                          right=z3.If(x.left >= y.right, False, z3.If(x.right < y.left, True, True))
                          )
 
-    # @staticmethod
-    # def log(args: list, node):
-    #     """the size is same"""
-    #     assert len(args) == 1
-    #     if isinstance(args[0].value, Range):
-    #         return math.log(args[0].value.left), math.log(args[0].value.right)
-    #     else:
-    #         return math.log(args[0].value)
-
     @staticmethod
     def logicaland(args: list, node):
         if not turn_on_bool:
@@ -317,6 +345,10 @@ class InferValue:
                        args[1].value.left)
         return Range(left=z3.If(cond1, False, z3.If(cond2, True, True)),
                      right=z3.If(cond1, True, z3.If(cond2, False, True)))
+
+    @staticmethod
+    def loopcond(args: list, node):
+        return InferValue.identity(args, node)
 
     @staticmethod
     def matmul(args: list, node):
@@ -421,6 +453,10 @@ class InferValue:
                                  Solver.max(value.right, ends))
 
     @staticmethod
+    def nextiteration(args: list, node):
+        return InferValue.identity(args, node)
+
+    @staticmethod
     def onehot(args: list, node):
         assert len(args) == 4
         value = Range(name="onehot", dtype=args[2].dtype)
@@ -490,6 +526,11 @@ class InferValue:
         return Range(left=left, right=right)
 
     @staticmethod
+    def readvariableop(args: list, node):
+        assert len(args) == 1
+        return args[0].value
+
+    @staticmethod
     def realdiv(args: list, node):
         assert len(args) == 2
         if isinstance(args[1].value, Range):
@@ -512,16 +553,41 @@ class InferValue:
     @staticmethod
     def relu6(args: list, node):
         assert len(args) == 1
-        value = Range(name="relu6", dtype=args[0].dtype)
-        return value, z3.And(Solver.max(value.left, [args[0].value.left, 0]),
-                             Solver.max(value.right, [args[0].value.right, 0]),
-                             Solver.min(value.left, [args[0].value.left, 6]),
-                             Solver.min(value.right, [args[0].value.right, 6]))
+        return Range(left=z3.If(args[0].value.left < 0, 0, z3.If(args[0].value.left > 6, 6, args[0].value.left)),
+                     right=z3.If(args[0].value.right < 0, 0, z3.If(args[0].value.right > 6, 6, args[0].value.right)))
 
     @staticmethod
     def reshape(args: list, node):
         assert len(args) == 2
         return InferValue.expanddims(args, node)
+
+    @staticmethod
+    def reversev2(args: list, node):
+        assert len(args) == 2
+        return InferValue.expanddims(args, node)
+
+    @staticmethod
+    def rsqrt(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            cons = []
+            try:
+                left = math.sqrt(args[0].value.left)
+            except:
+                left = Solver.add_variable("rsqrtL", 1)
+                cons.append(left >= 0)
+                cons.append(left * left == args[0].value.left)
+
+            try:
+                right = math.sqrt(args[0].value.right)
+            except:
+                right = Solver.add_variable("rsqrtR", 1)
+                cons.append(right >= 0)
+                cons.append(right * right == args[0].value.right)
+
+            return Range(left=1 / right, right=1 / left), z3.And(cons)
+        else:
+            return 1 / math.sqrt(args[0].value)
 
     @staticmethod
     def select(args: list, node):
@@ -548,6 +614,10 @@ class InferValue:
         except:
             value = Range(left=0, right=Solver.add_variable("shape_R", 3))
             return value
+
+    @staticmethod
+    def sigmoid(args: list, node):
+        return Range(left=0, right=1)
 
     @staticmethod
     def size(args: list, node):
@@ -605,6 +675,10 @@ class InferValue:
         return InferValue.expanddims(args, node)
 
     @staticmethod
+    def stopgradient(args: list, node):
+        return InferValue.identity(args, node)
+
+    @staticmethod
     def stridedslice(args: list, node):
         return InferValue.expanddims(args, node)
 
@@ -644,6 +718,27 @@ class InferValue:
         return [args[0].value, args[0].value]
 
     @staticmethod
+    def tensorarrayv3(args: list, node):
+        assert len(args) == 1
+        return [Range(name="tensorarrayv3", dtype=node.attr["dtype"].type),
+                Range(name="tensorarrayv3_dumy", dtype=node.attr["dtype"].type)]
+
+    @staticmethod
+    def tensorarrayreadv3(args: list, node):
+        assert len(args) == 3
+        return args[0].value
+
+    @staticmethod
+    def tensorarrayscatterv3(args: list, node):
+        assert len(args) == 4
+        if isinstance(args[2].value, Range):
+            return args[0].value, z3.And(args[0].value.left <= args[2].value.left,
+                                         args[0].value.right >= args[2].value.right)
+        else:
+            return args[0].value, z3.And(args[0].value.left <= args[2].value,
+                                         args[0].value.right >= args[2].value)
+
+    @staticmethod
     def tile(args: list, node):
         assert len(args) == 2
         return InferValue.expanddims(args, node)
@@ -661,6 +756,12 @@ class InferValue:
             return InferValue.expanddims(args, node)
         else:
             return [InferValue.expanddims(args, node) for _ in range(nums)]
+
+    @staticmethod
+    def varhandleop(args: list, node):
+        assert len(args) == 0
+        attrs = node.attr
+        return getattr(parse_format_text, "variablev2")(attrs)
 
     @staticmethod
     def variablev2(args: list, node):
