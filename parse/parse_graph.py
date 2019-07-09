@@ -214,7 +214,6 @@ class Graph:
                 return None
             nodes_interested.append(appended.name)
 
-        # wait_for_filling = set()
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
             if son in self.node_visited:
@@ -229,14 +228,10 @@ class Graph:
                 if not is_control:
                     if in_node_name not in self.node_visited:
                         # there is a loop, and the node is "Merge"
-                        # # we assume that the node only have single output, i.e., the node should not be indexed
-                        # if in_node_name not in wait_for_filling:
-                        #     self.node_output[in_node_name].value = Range(name=in_node_name + "_loop",
-                        #                                                  dtype=self.node_output[in_node_name].dtype)
-                        #     wait_for_filling.add(in_node_name)
-
-                        pass
-                        #TODO write code for merge and nextiteration
+                        assert self.node_by_name[in_node_name].op == "NextIteration"
+                        self.node_visited.add(in_node_name)
+                        self.node_output[in_node_name].value = Range(name="nextiteration",
+                                                                     dtype=self.node_output[in_node_name].dtype)
 
                     parents_aps.append(self.node_output[in_node_name].index_of(self.edge_index[(in_node_name, son)]))
                     all_none &= parents_aps[-1].has_none()
@@ -263,20 +258,11 @@ class Graph:
 
             if new_size is not None:
                 self.node_output[son].size = new_size
-            if son in wait_for_filling:
-                if isinstance(temp, tuple):
-                    self.node_output[son].constraints = z3.And(temp[1],
-                                                               self.node_output[son].value.left == temp[0].left,
-                                                               self.node_output[son].value.right == temp[0].right)
-                else:
-                    self.node_output[son].constraints = z3.And(self.node_output[son].value.left == temp.left,
-                                                               self.node_output[son].value.right == temp.right)
+            if isinstance(temp, tuple):
+                self.node_output[son].value = temp[0]
+                self.node_output[son].constraints = temp[1]
             else:
-                if isinstance(temp, tuple):
-                    self.node_output[son].value = temp[0]
-                    self.node_output[son].constraints = temp[1]
-                else:
-                    self.node_output[son].value = temp
+                self.node_output[son].value = temp
 
             self.write(self.node_output[son])
 

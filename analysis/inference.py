@@ -172,6 +172,10 @@ class InferValue:
             return Range(left=z3.If(condition, False, True), right=z3.If(condition, True, True))
 
     @staticmethod
+    def exit(args: list, node):
+        return InferValue.identity(args, node)
+
+    @staticmethod
     def expanddims(args: list, node):
         return args[0].value if isinstance(args[0].value, Range) else Range(left=resolve_type(np.min(args[0].value)),
                                                                             right=resolve_type(np.max(args[0].value)))
@@ -453,9 +457,9 @@ class InferValue:
             return value, z3.And(Solver.min(value.left, ends),
                                  Solver.max(value.right, ends))
 
-    @staticmethod
-    def nextiteration(args: list, node):
-        return InferValue.identity(args, node)
+    # @staticmethod
+    # def nextiteration(args: list, node):
+    #     return InferValue.identity(args, node)
 
     @staticmethod
     def onehot(args: list, node):
@@ -617,10 +621,6 @@ class InferValue:
             return value
 
     @staticmethod
-    def sigmoid(args: list, node):
-        return Range(left=0, right=1)
-
-    @staticmethod
     def size(args: list, node):
         assert len(args) == 1
         try:
@@ -671,6 +671,16 @@ class InferValue:
             return math.sqrt(args[0].value)
 
     @staticmethod
+    def squareddifference(args: list, node):
+        assert len(args) == 2
+        value1 = (args[0].value.left - args[1].value.right) * (args[0].value.left - args[1].value.right)
+        value2 = (args[0].value.right - args[1].value.left) * (args[0].value.right - args[1].value.left)
+        return Range(left=z3.If(
+            z3.Or(z3.And(args[0].value.left >= args[1].value.left, args[0].value.left <= args[1].value.right),
+                  z3.And(args[0].value.right >= args[1].value.left, args[0].value.right <= args[1].value.right)), 0,
+            z3.If(value1 < value2, value1, value2)), right=z3.If(value1 > value2, value1, value2))
+
+    @staticmethod
     def squeeze(args: list, node):
         assert len(args) == 1
         return InferValue.expanddims(args, node)
@@ -719,6 +729,11 @@ class InferValue:
         return [args[0].value, args[0].value]
 
     @staticmethod
+    def tensorarraygatherv3(args: list, node):
+        assert len(args) == 3
+        return args[0].value
+
+    @staticmethod
     def tensorarrayv3(args: list, node):
         assert len(args) == 1
         return [Range(name="tensorarrayv3", dtype=node.attr["dtype"].type),
@@ -738,6 +753,16 @@ class InferValue:
         else:
             return args[0].value, z3.And(args[0].value.left <= args[2].value,
                                          args[0].value.right >= args[2].value)
+
+    @staticmethod
+    def tensorarraysizev3(args: list, node):
+        assert len(args) == 2
+        return int(args[0].size[0])
+
+    @staticmethod
+    def tensorarraywritev3(args: list, node):
+        assert len(args) == 4
+        return InferValue.tensorarrayscatterv3(args, node)
 
     @staticmethod
     def tile(args: list, node):
@@ -894,6 +919,14 @@ class InferValue:
         else:
             tmp_exp = np.exp(args[0].value)
             return tmp_exp / np.sum(tmp_exp)
+
+    @staticmethod
+    def sigmoid(args: list, node):
+        return Range(left=0, right=1)
+
+    @staticmethod
+    def tanh(args: list, node):
+        return Range(left=0, right=1)
 
 
 def clip_value(x: Range):
