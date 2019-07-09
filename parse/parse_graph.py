@@ -189,6 +189,9 @@ class Graph:
             print("----------Analysis failed due to loop----------")
             return None
         if appended is not None:
+            if "gradient" in appended.name.lower() and "stopgradient" not in appended.name.lower():
+                print("----------Gradients are not interested----------")
+                return None
             nodes_interested.append(appended.name)
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
