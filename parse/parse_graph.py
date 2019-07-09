@@ -209,6 +209,9 @@ class Graph:
 
         nodes_interested.sort(key=lambda x: self.nodes_in_main_clique_topology[x])
         if appended is not None:
+            if "gradient" in appended.name.lower() and "stopgradient" not in appended.name.lower():
+                print("----------Gradients are not interested----------")
+                return None
             nodes_interested.append(appended.name)
 
         # wait_for_filling = set()
