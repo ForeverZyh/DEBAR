@@ -1,5 +1,6 @@
 import z3
 from utils import resolve_type
+import math
 
 
 class Solver:
@@ -53,10 +54,23 @@ class Solver:
         # except:
         #     print([type(y) for y in ys])
 
-    # @staticmethod
-    # def condition(pred, all_zero, all_one, unknown):
-    #     return z3.If(z3.And(pred.left, z3.Not(pred.right)), all_zero,
-    #                  z3.If(z3.And(pred.right, z3.Not(pred.left)), all_one, unknown))
+    @staticmethod
+    def in_interval(x, interval):
+        if isinstance(interval, tuple):
+            if interval[0] > 0 or interval[1] > 0:
+                # (a, b]
+                if math.isinf(interval[1]):
+                    return z3.And(interval[0] < x)
+                else:
+                    return z3.And(interval[0] < x, x <= interval[1])
+            else:
+                # [a, b)
+                if math.isinf(interval[0]):
+                    return z3.And(x < interval[1])
+                else:
+                    return z3.And(interval[0] <= x, x < interval[1])
+        else:
+            return x == interval
 
 
 class Range:
