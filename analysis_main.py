@@ -5,7 +5,6 @@ from utils import OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 import math
 import sys
 
-
 try:
     assert len(sys.argv) == 2
     pbtxt = sys.argv[1]
@@ -29,6 +28,7 @@ if __name__ == "__main__":
 
     for suspected_node in suspected_nodes:
         # graph.draw(graph.backward_slice(suspected_node.name, set()), "real_interested")
+        print(suspected_node.op, suspected_node.name)
         if suspected_node.op == "RealDiv":
             constraints = graph.forward_analysis(graph.node_by_name[graph.graph_backward[suspected_node.name][1][0]],
                                                  suspected_node)
@@ -77,8 +77,8 @@ if __name__ == "__main__":
             S = z3.Solver()
             all_constraints = [constraints, additional_constraints]
             S.add(all_constraints)
-            for x in all_constraints:
-                print(x)
+            # for x in all_constraints:
+            #     print(x)
             # print(str(S.check()))
             if str(S.check()) == "sat":
                 print(S.model())

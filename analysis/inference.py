@@ -513,6 +513,11 @@ class InferValue:
         return getattr(parse_format_text, node.op.lower())(attrs)
 
     @staticmethod
+    def prod(args: list, node):
+        assert len(args) == 2
+        return InferValue.mul(args, node)
+
+    @staticmethod
     def randomshuffle(args: list, node):
         assert len(args) == 1
         return InferValue.expanddims(args, node)
@@ -823,10 +828,6 @@ class InferValue:
         warnings.warn("noop not implemented", RuntimeWarning)
 
     @staticmethod
-    def prod(args: list, node):
-        warnings.warn("prod not implemented", RuntimeWarning)
-
-    @staticmethod
     def restorev2(args: list, node):
         warnings.warn("restorev2 not implemented", RuntimeWarning)
 
@@ -838,8 +839,9 @@ class InferValue:
     @staticmethod
     def log(args: list, node):
         assert len(args) == 1
+        stride = 5
         intervals = [(0.0, math.pow(10, UNDERFLOW_D))] + \
-                    [(math.pow(10, i), math.pow(10, i + 5)) for i in range(UNDERFLOW_D, OVERFLOW_D, 5)] + \
+                    [(math.pow(10, i), math.pow(10, i + stride)) for i in range(UNDERFLOW_D, OVERFLOW_D, stride)] + \
                     [(math.pow(10, OVERFLOW_D), math.inf)]
         if isinstance(args[0].value, Range):
             value = Range(name="log", dtype=1)
@@ -860,24 +862,21 @@ class InferValue:
     @staticmethod
     def exp(args: list, node):
         assert len(args) == 1
-        intervals = [(-math.inf, -90)] + [(-i, -i + 40) for i in range(90, 10, -40)] + \
+        stride = 40
+        intervals = [(-math.inf, -90)] + [(-i, -i + stride) for i in range(90, 10, -stride)] + \
                     [(-10.0, 0.0), 0, (0.0, 10.0)] + \
-                    [(i, i + 40) for i in range(10, 90, 40)] + [(90, math.inf)]
+                    [(i, i + stride) for i in range(10, 90, stride)] + [(90, math.inf)]
         if isinstance(args[0].value, Range):
             value = Range(name="exp", dtype=1)
             constraints = []
             for (left, right) in combinations_with_replacement(intervals, 2):
                 temp_constraint = [Solver.in_interval(args[0].value.left, left),
                                    Solver.in_interval(args[0].value.right, right)]
-                if np.max(left) > 0:
-                    temp_constraint += [value.left == math.exp(np.min(left))]
-                elif not math.isinf(np.min(left)):
+                if not math.isinf(np.min(left)):
                     temp_constraint += [value.left == math.exp(np.min(left))]
                 else:
                     temp_constraint += [value.left == 0]
-                if np.min(right) < 0:
-                    temp_constraint += [value.right == math.exp(np.max(right))]
-                elif not math.isinf(np.max(right)):
+                if not math.isinf(np.max(right)):
                     temp_constraint += [value.right == math.exp(np.max(right))]
                 constraints.append(z3.And(temp_constraint))
 
@@ -890,9 +889,10 @@ class InferValue:
         assert len(args) == 1
         ind = int(args[0].size[-1])
         assert ind > 1
-        intervals = [(-math.inf, -90)] + [(-i, -i + 40) for i in range(90, 10, -40)] + \
+        stride = 40
+        intervals = [(-math.inf, -90)] + [(-i, -i + stride) for i in range(90, 10, -stride)] + \
                     [(-10.0, 0.0), 0, (0.0, 10.0)] + \
-                    [(i, i + 40) for i in range(10, 90, 40)] + [(90, math.inf)]
+                    [(i, i + stride) for i in range(10, 90, stride)] + [(90, math.inf)]
         if isinstance(args[0].value, Range):
             value = Range(name="softmax", dtype=1)
             constraints = []
@@ -922,11 +922,57 @@ class InferValue:
 
     @staticmethod
     def sigmoid(args: list, node):
-        return Range(left=0, right=1)
+        assert len(args) == 1
+        stride = 19
+        intervals = [(-math.inf, -40)] + [(-i, -i + stride) for i in range(40, 2, -stride)] + \
+                    [(-2.0, 0.0), 0, (0.0, 2.0)] + \
+                    [(i, i + stride) for i in range(2, 40, stride)] + [(40, math.inf)]
+        if isinstance(args[0].value, Range):
+            value = Range(name="sigmoid", dtype=1)
+            constraints = []
+            for (left, right) in combinations_with_replacement(intervals, 2):
+                temp_constraint = [Solver.in_interval(args[0].value.left, left),
+                                   Solver.in_interval(args[0].value.right, right)]
+                if not math.isinf(np.min(left)):
+                    temp_constraint += [value.left == 1 / (1 + math.exp(-np.min(left)))]
+                else:
+                    temp_constraint += [value.left == 0]
+                if not math.isinf(np.max(right)):
+                    temp_constraint += [value.right == 1 / (1 + math.exp(-np.max(right)))]
+                else:
+                    temp_constraint += [value.right == 1]
+                constraints.append(z3.And(temp_constraint))
+
+            return value, z3.And(z3.Or(constraints), value.left <= value.right)
+        else:
+            return 1 / (1 + np.exp(-args[0].value))
 
     @staticmethod
     def tanh(args: list, node):
-        return Range(left=0, right=1)
+        assert len(args) == 1
+        stride = 9
+        intervals = [(-math.inf, -20)] + [(-i, -i + stride) for i in range(20, 2, -stride)] + \
+                    [(-2.0, 0.0), 0, (0.0, 2.0)] + \
+                    [(i, i + stride) for i in range(2, 20, stride)] + [(20, math.inf)]
+        if isinstance(args[0].value, Range):
+            value = Range(name="tanh", dtype=1)
+            constraints = []
+            for (left, right) in combinations_with_replacement(intervals, 2):
+                temp_constraint = [Solver.in_interval(args[0].value.left, left),
+                                   Solver.in_interval(args[0].value.right, right)]
+                if not math.isinf(np.min(left)):
+                    temp_constraint += [value.left == math.tanh(np.min(left))]
+                else:
+                    temp_constraint += [value.left == -1]
+                if not math.isinf(np.max(right)):
+                    temp_constraint += [value.right == math.tanh(np.max(right))]
+                else:
+                    temp_constraint += [value.right == 1]
+                constraints.append(z3.And(temp_constraint))
+
+            return value, z3.And(z3.Or(constraints), value.left <= value.right)
+        else:
+            return np.tanh(args[0].value)
 
 
 def clip_value(x: Range):
