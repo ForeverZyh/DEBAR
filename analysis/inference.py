@@ -8,6 +8,7 @@ import numpy as np
 import z3
 from utils import OVERFLOW_D, UNDERFLOW_D, OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 from utils import resolve_type
+from itertools import combinations_with_replacement
 
 turn_on_bool = False
 
@@ -706,6 +707,92 @@ class InferValue:
     @staticmethod
     def savev2(args: list, node):
         warnings.warn("savev2 not implemented", RuntimeWarning)
+
+    # non linear operations:
+    @staticmethod
+    def log(args: list, node):
+        assert len(args) == 1
+        intervals = [(0.0, math.pow(10, UNDERFLOW_D))] + \
+                    [(math.pow(10, i), math.pow(10, i + 5)) for i in range(UNDERFLOW_D, OVERFLOW_D, 5)] + \
+                    [(math.pow(10, OVERFLOW_D), math.inf)]
+        if isinstance(args[0].value, Range):
+            value = Range(name="log", dtype=1)
+            constraints = []
+            for (left, right) in combinations_with_replacement(intervals, 2):
+                temp_constraint = [Solver.in_interval(args[0].value.left, left),
+                                   Solver.in_interval(args[0].value.right, right)]
+                if left[0] != 0:
+                    temp_constraint += [value.left == math.log(left[0])]
+                if not math.isinf(right[1]):
+                    temp_constraint += [value.right == math.log(right[1])]
+                constraints.append(z3.And(temp_constraint))
+
+            return value, z3.And(z3.Or(constraints), value.left <= value.right)
+        else:
+            return math.log(args[0].value)
+
+    @staticmethod
+    def exp(args: list, node):
+        assert len(args) == 1
+        intervals = [(-math.inf, -90)] + [(-i, -i + 40) for i in range(90, 10, -40)] + \
+                    [(-10.0, 0.0), 0, (0.0, 10.0)] + \
+                    [(i, i + 40) for i in range(10, 90, 40)] + [(90, math.inf)]
+        if isinstance(args[0].value, Range):
+            value = Range(name="exp", dtype=1)
+            constraints = []
+            for (left, right) in combinations_with_replacement(intervals, 2):
+                temp_constraint = [Solver.in_interval(args[0].value.left, left),
+                                   Solver.in_interval(args[0].value.right, right)]
+                if np.max(left) > 0:
+                    temp_constraint += [value.left == math.exp(np.min(left))]
+                elif not math.isinf(np.min(left)):
+                    temp_constraint += [value.left == math.exp(np.min(left))]
+                else:
+                    temp_constraint += [value.left == 0]
+                if np.min(right) < 0:
+                    temp_constraint += [value.right == math.exp(np.max(right))]
+                elif not math.isinf(np.max(right)):
+                    temp_constraint += [value.right == math.exp(np.max(right))]
+                constraints.append(z3.And(temp_constraint))
+
+            return value, z3.And(z3.Or(constraints), value.left <= value.right)
+        else:
+            return math.exp(args[0].value)
+
+    @staticmethod
+    def softmax(args: list, node):
+        assert len(args) == 1
+        ind = int(args[0].size[-1])
+        assert ind > 1
+        intervals = [(-math.inf, -90)] + [(-i, -i + 40) for i in range(90, 10, -40)] + \
+                    [(-10.0, 0.0), 0, (0.0, 10.0)] + \
+                    [(i, i + 40) for i in range(10, 90, 40)] + [(90, math.inf)]
+        if isinstance(args[0].value, Range):
+            value = Range(name="softmax", dtype=1)
+            constraints = []
+            for (left, right) in combinations_with_replacement(intervals, 2):
+                temp_constraint = [Solver.in_interval(args[0].value.left, left),
+                                   Solver.in_interval(args[0].value.right, right)]
+                min_ele = math.exp(np.min(left)) if not math.isinf(np.min(left)) else 0
+                max_ele = math.exp(np.max(right)) if not math.isinf(np.max(right)) else math.inf
+                if isinstance(left, tuple) or isinstance(right, tuple):
+                    if math.isinf(max_ele) or min_ele == 0:
+                        temp_constraint += [value.left == 0]
+                    else:
+                        temp_constraint += [value.left == min_ele / ((ind - 1) * max_ele + min_ele)]
+                    if math.isinf(max_ele) or min_ele == 0:
+                        temp_constraint += [value.right == 1]
+                    else:
+                        temp_constraint += [value.right == max_ele / ((ind - 1) * min_ele + max_ele)]
+                else:
+                    temp_constraint += [value.left == 1.0 / ind, value.right == 1.0 / ind]
+
+                constraints.append(z3.And(temp_constraint))
+
+            return value, z3.And(z3.Or(constraints), value.left <= value.right)
+        else:
+            tmp_exp = np.exp(args[0].value)
+            return tmp_exp / np.sum(tmp_exp)
 
 
 def clip_value(x: Range):

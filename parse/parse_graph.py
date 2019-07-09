@@ -215,7 +215,7 @@ class Graph:
                         new_size = getattr(InferSize, u.op.lower())(parents_aps, u)
                     temp = getattr(InferValue, u.op.lower())(parents_aps, u)
                 except AttributeError:
-                    if u.op.lower() in ["log", "exp", "tanh", "softmax"] or u.op.lower() in ["assert"]:
+                    if u.op.lower() in ["assert"]:
                         pass
                     else:
                         raise AttributeError
@@ -239,32 +239,34 @@ class Graph:
         for son in nodes_interested[:-1]:
             if self.node_output[son].constraints is not None:
                 ret_constraints.append(self.node_output[son].constraints)
+                self.write(self.node_output[son].constraints)
         return z3.And(ret_constraints)
 
     def backward_analysis_const(self, node, range_const):
         if self.node_output[node.name].value is not None:
             yield meet(self.node_output[node.name].value, range_const)
         else:
-            in_node_values = []
-            for (in_node, is_control) in self.graph_backward[node.name]:
-                if not is_control:
-                    in_node_values.append(self.node_output[in_node])
-            for in_node_value_ranges in getattr(InferConstant, node.op.lower())(in_node_values, range_const, node):
-                idx = 0
-                gens = []
-                for (in_node, is_control) in self.graph_backward[node.name]:
-                    if not is_control:
-                        if in_node_value_ranges[idx] is not None:
-                            if not check_range_const(in_node_value_ranges[idx]):
-                                return False
-                            gens.append(
-                                self.backward_analysis_const(self.node_by_name[in_node], in_node_value_ranges[idx]))
-                        idx += 1
-                for rets in product(*gens):
-                    if False in rets:
-                        yield False
-                    else:
-                        yield z3.And(rets)
+            raise NotImplementedError
+            # in_node_values = []
+            # for (in_node, is_control) in self.graph_backward[node.name]:
+            #     if not is_control:
+            #         in_node_values.append(self.node_output[in_node])
+            # for in_node_value_ranges in getattr(InferConstant, node.op.lower())(in_node_values, range_const, node):
+            #     idx = 0
+            #     gens = []
+            #     for (in_node, is_control) in self.graph_backward[node.name]:
+            #         if not is_control:
+            #             if in_node_value_ranges[idx] is not None:
+            #                 if not check_range_const(in_node_value_ranges[idx]):
+            #                     return False
+            #                 gens.append(
+            #                     self.backward_analysis_const(self.node_by_name[in_node], in_node_value_ranges[idx]))
+            #             idx += 1
+            #     for rets in product(*gens):
+            #         if False in rets:
+            #             yield False
+            #         else:
+            #             yield z3.And(rets)
 
 
 def main():
