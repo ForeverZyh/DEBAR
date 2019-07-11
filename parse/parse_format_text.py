@@ -2,7 +2,8 @@
 
 from tensorflow.python.framework import tensor_util
 from solver import Range
-import z3
+import ast
+import numpy as np
 
 
 def const(attrs):
@@ -16,6 +17,7 @@ def iteratorv2(attrs):
     # print(dtypes)
     value = [Range(name="iteratorv2", dtype=dtype) for dtype in dtypes]
     return value
+
 
 def variablev2(attrs):
     dtype = attrs["dtype"].type
@@ -31,24 +33,51 @@ def variablev2(attrs):
 
 def oneshotiterator(attrs):
     dtypes = attrs["output_types"].list.type
-    value = [Range(name="oneshotiterator", dtype=dtype) for dtype in dtypes]
-    """hard code assign for MNIST dataset"""
-    value[0].left = -1
-    value[0].right = 1
-    value[1].left = 0
-    value[1].right = 9
-    return value  # , z3.And([v.left <= v.right for v in value[:1]])
+    value = []
+    print(attrs)
+    while True:
+        x = input("Please specify the range of inputs\n"
+                  "e.g. [[-1, 1], [0, None]] means the first range is [-1, 1] and the second range is [0 ,inf):\n")
+        try:
+            input_list = ast.literal_eval(x)
+            if isinstance(input_list, list) and np.array(input_list) == (len(dtypes), 2):
+                break
+        except:
+            pass
+
+    for (i, rng) in enumerate(input_list):
+        if None in rng:
+            value.append(Range(name="oneshotiterator", dtype=dtypes[i]))
+            if rng[0] is not None:
+                value[-1].left = rng[0]
+            if rng[1] is not None:
+                value[-1].right = rng[1]
+        else:
+            value.append(Range(left=rng[0], right=rng[1]))
+
+    return value
 
 
 def placeholder(attrs):
     dtype = attrs["dtype"].type
-    """hard code assign for MNIST dataset"""
-    if dtype == 3:
-        return Range(left=0, right=9)
+    print(attrs)
+    while True:
+        x = input("Please specify the range of the placeholder \n"
+                  "e.g. [-1, 1] means the range is [-1, 1] \n"
+                  "e,g, [0, None] means the range is [0 ,inf):\n")
+        try:
+            rng = ast.literal_eval(x)
+            if isinstance(rng, list) and len(rng) == 2:
+                break
+        except:
+            pass
+
+    if None in rng:
+        value = Range(name="oneshotiterator", dtype=dtype)
+        if rng[0] is not None:
+            value.left = rng[0]
+        if rng[1] is not None:
+            value.right = rng[1]
+        return value
     else:
-        if str(attrs["shape"].shape) == "":
-            # keep_prob
-            return Range(left=0.1, right=1)
-        else:
-            # image
-            return Range(left=-1, right=1)
+        return Range(left=rng[0], right=rng[1])
