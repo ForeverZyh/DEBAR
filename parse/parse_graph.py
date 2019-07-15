@@ -44,7 +44,7 @@ class Graph:
         with open(filename) as f:
             txt = f.read()
             self.graph_def = text_format.Parse(txt, tf.GraphDef())
-            tf.import_graph_def(self.graph_def)
+            tf.import_graph_def(self.graph_def, name="")
             self.tf_graph = tf.get_default_graph()
             # for op in self.tf_graph.get_operations():
             #     print("==============")
@@ -79,11 +79,11 @@ class Graph:
             self.node_output[node.name] = AbstractInterpretation()
         for op in self.tf_graph.get_operations():
             for tensor in op.values():
-                self.tensor_to_op[tensor.name[len("import/"):]] = op.name[len("import/"):]
+                self.tensor_to_op[tensor.name] = op.name
 
         for node in self.graph_def.node:
             self.graph_backward[node.name] = []
-            node_values = self.tf_graph.get_operation_by_name("import/" + node.name).values()
+            node_values = self.tf_graph.get_operation_by_name(node.name).values()
 
             if node_values is None or len(node_values) == 0:
                 self.node_output[node.name] = AbstractInterpretation()
@@ -104,14 +104,14 @@ class Graph:
                     in_node = self.tensor_to_op[in_node_raw]
 
                     in_tensor_names = [tensor.name for tensor in self.tf_graph.get_operation_by_name(
-                        "import/" + self.tensor_to_op[in_node_raw]).values()]
+                        self.tensor_to_op[in_node_raw]).values()]
                     self.edge_index[(in_node, node.name)] = None if len(
-                        in_tensor_names) == 1 else in_tensor_names.index("import/" + in_node_raw)
+                        in_tensor_names) == 1 else in_tensor_names.index(in_node_raw)
                 else:  # if the input is defined by the operation's name
                     in_node = in_node_raw
 
                     in_tensor_names = [tensor.name for tensor in self.tf_graph.get_operation_by_name(
-                        "import/" + in_node_raw).values()]
+                        in_node_raw).values()]
                     self.edge_index[(in_node, node.name)] = None if len(in_tensor_names) == 1 else 0
 
                 if in_node not in self.graph_forward:

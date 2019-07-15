@@ -41,6 +41,17 @@ class InferValue:
                          right=args[0].value.right + resolve_type(np.max(temp)))
 
     @staticmethod
+    def addn(args: list, node):
+        assert len(args) > 0
+        if len(args) == 1:
+            return args[0].value
+        else:
+            s = InferValue.add([args[0], args[1]], node)
+            for i in range(2, len(args)):
+                s = InferValue.add([AbstractInterpretation(value=s), args[i]], node)
+            return s
+
+    @staticmethod
     def all(args: list, node):
         if not turn_on_bool:
             return Range(left=True, right=True)
@@ -72,6 +83,15 @@ class InferValue:
             return args[1].value
         else:
             return args[0].value
+
+    @staticmethod
+    def batchmatmul(args: list, node):
+        assert len(args) == 2
+        x = copy.deepcopy(args[0])
+        y = copy.deepcopy(args[1])
+        x.size = x.size[1:]
+        y.size = y.size[1:]
+        return InferValue.matmul([x, y], node)
 
     @staticmethod
     def biasadd(args: list, node):
@@ -111,6 +131,8 @@ class InferValue:
                                      z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
         elif int(attrs['SrcT'].type) in [9] and int(attrs['DstT'].type) in [3]:
             return args[0].value
+        elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [3]:
+            return InferValue.floor(args, node)
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
 
@@ -119,8 +141,12 @@ class InferValue:
         assert len(args) == 3
         if isinstance(args[0].value, Range):
             value = Range(name="clipbyvalue", dtype=args[0].dtype)
-            return value, z3.And(Solver.max(value.left, [args[0].value.left, args[1].value]),
-                                 Solver.min(value.right, [args[0].value.right, args[2].value]))
+            return value, z3.And(Solver.max(value.left, [args[0].value.left,
+                                                         args[1].value if not isinstance(args[1].value, Range) else
+                                                         args[1].value.left]),
+                                 Solver.min(value.right, [args[0].value.right,
+                                                          args[2].value if not isinstance(args[2].value, Range) else
+                                                          args[2].value.right]))
         else:
             return min(max(args[0].value, args[1].value), args[2].value)
 
@@ -188,11 +214,14 @@ class InferValue:
     @staticmethod
     def floor(args: list, node):
         assert len(args) == 1
-        tmp = Range(name="floor_tmp", dtype=3)
-        value = Range(name="floor", dtype=args[0].dtype)
-        return value, z3.And(
-            [tmp.left >= args[0].value.left, tmp.left < args[0].value.left + 1, tmp.right >= args[0].value.right,
-             tmp.right < args[0].value.right + 1, tmp.left == value.left, tmp.right == value.right])
+        if isinstance(args[0].value, Range):
+            value = Range(name="floor", dtype=args[0].dtype)
+            return value, z3.And(
+                [value.left >= args[0].value.left, value.left < args[0].value.left + 1,
+                 value.right >= args[0].value.right,
+                 value.right < args[0].value.right + 1])
+        else:
+            return np.floor(args[0].value)
 
     @staticmethod
     def fusedbatchnorm(args: list, node):
@@ -314,6 +343,11 @@ class InferValue:
                          )
 
     @staticmethod
+    def linspace(args: list, node):
+        assert len(args) == 3
+        return np.linspace(args[0].value, args[1].value, args[2].value)
+
+    @staticmethod
     def logicaland(args: list, node):
         if not turn_on_bool:
             return Range(left=True, right=True)
@@ -361,11 +395,15 @@ class InferValue:
         for i in range(len(args[0].size) - 2):
             assert str(args[0].size[i]) == "?" or str(args[1].size[i]) == "?" or args[0].size[i] == args[1].size[i]
         ind = real_size(args[0].size[-1], args[1].size[-2])
-        value = Range(name="matmul", dtype=args[0].dtype)
-        ends = [args[0].value.left * args[1].value.left * ind, args[0].value.left * args[1].value.right * ind,
-                args[0].value.right * args[1].value.left * ind, args[0].value.right * args[1].value.right * ind]
-        return value, z3.And(Solver.min(value.left, ends),
-                             Solver.max(value.right, ends))
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            return np.matmul(args[0].value, args[1].value)
+        else:
+            x = InferValue.expanddims([args[0]], node)
+            y = InferValue.expanddims([args[1]], node)
+            value = Range(name="matmul", dtype=args[0].dtype)
+            ends = [x.left * y.left * ind, x.left * y.right * ind, x.right * y.left * ind, x.right * y.right * ind]
+            return value, z3.And(Solver.min(value.left, ends),
+                                 Solver.max(value.right, ends))
 
     @staticmethod
     def max(args: list, node):
