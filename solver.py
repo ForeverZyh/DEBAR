@@ -24,8 +24,11 @@ class Solver:
 
     @staticmethod
     def max(x, ys_):
-        ys = list(map(resolve_type, ys_))
-        # try:
+        ys1 = [y for y in list(map(resolve_type, ys_)) if str(y) != 'inf']
+        ys = [y for y in ys1 if str(y) != '-inf']
+        if len(ys1) != len(ys_):
+            z3.And([x >= y for y in ys])
+
         try:
             return x == max(ys)
         except:
@@ -35,13 +38,14 @@ class Solver:
         if len(ys) == 2:
             return x == z3.If(ys[0] > ys[1], ys[0], ys[1])
         return z3.And(z3.Or([x == y for y in ys]), z3.And([x >= y for y in ys]))
-        # except:
-        #     print([type(y) for y in ys])
 
     @staticmethod
     def min(x, ys_):
-        ys = list(map(resolve_type, ys_))
-        # try:
+        ys1 = [y for y in list(map(resolve_type, ys_)) if str(y) != '-inf']
+        ys = [y for y in ys1 if str(y) != 'inf']
+        if len(ys1) != len(ys_):
+            z3.And([x <= y for y in ys])
+
         try:
             return x == min(ys)
         except:
@@ -51,8 +55,6 @@ class Solver:
         if len(ys) == 2:
             return x == z3.If(ys[0] < ys[1], ys[0], ys[1])
         return z3.And(z3.Or([x == y for y in ys]), z3.And([x <= y for y in ys]))
-        # except:
-        #     print([type(y) for y in ys])
 
     @staticmethod
     def in_interval(x, interval):

@@ -969,7 +969,7 @@ class InferValue:
                     right = 1 / (1 + math.exp(-np.max(interval)))
                 else:
                     right = 1
-                    
+
                 if pre_left is None:
                     pre_left = left
                 else:
@@ -1000,7 +1000,7 @@ class InferValue:
                     right = math.tanh(np.max(interval))
                 else:
                     right = 1
-                
+
                 if pre_left is None:
                     pre_left = left
                 else:
