@@ -40,10 +40,15 @@ def oneshotiterator(attrs):
                   "e.g. [[-1, 1], [0, None]] means the first range is [-1, 1] and the second range is [0 ,inf):\n")
         try:
             input_list = ast.literal_eval(x)
-            if isinstance(input_list, list) and np.array(input_list) == (len(dtypes), 2):
-                break
         except:
-            pass
+            input_list = None
+
+        if not isinstance(input_list, list):
+            print("Input string is not a list!")
+        elif np.array(input_list).shape != (len(dtypes), 2):
+            print("Input list's shape not match with %s (received %s)!" % (str((len(dtypes), 2)), str(np.array(input_list))))
+        else:
+            break
 
     for (i, rng) in enumerate(input_list):
         if None in rng:
@@ -67,10 +72,11 @@ def placeholder(attrs):
                   "e,g, [0, None] means the range is [0 ,inf):\n")
         try:
             rng = ast.literal_eval(x)
-            if isinstance(rng, list) and len(rng) == 2:
-                break
         except:
-            pass
+            rng = None
+        
+        if isinstance(rng, list) and len(rng) == 2:
+            break
 
     if None in rng:
         value = Range(name="oneshotiterator", dtype=dtype)
