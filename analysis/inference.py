@@ -495,9 +495,14 @@ class InferValue:
             return value, z3.And(Solver.min(value.left, ends),
                                  Solver.max(value.right, ends))
 
-    # @staticmethod
-    # def nextiteration(args: list, node):
-    #     return InferValue.identity(args, node)
+    @staticmethod
+    def nonmaxsuppressionv3(args: list, node):
+        assert len(args) == 5
+        try:
+            ind = int(args[1].size[0])
+            return Range(left=0, right=ind-1)
+        except:
+            return Range(left=0, right=Solver.add_variable("nonmaxsuppressionv3_R", 3))
 
     @staticmethod
     def onehot(args: list, node):
@@ -536,8 +541,8 @@ class InferValue:
                     has_zero.append(args[i].value.left)
                     has_one.append(args[i].value.right)
                 else:
-                    has_zero.append(not np.all(args[i].value))
-                    has_one.append(np.any(args[i].value))
+                    has_zero.append(not bool(np.all(args[i].value)))
+                    has_one.append(bool(np.any(args[i].value)))
             return Range(left=z3.Or(has_zero), right=z3.Or(has_one))
 
     @staticmethod
@@ -811,6 +816,16 @@ class InferValue:
     def tile(args: list, node):
         assert len(args) == 2
         return InferValue.expanddims(args, node)
+    
+    @staticmethod
+    def topkv2(args: list, node):
+        assert len(args) == 2
+        try:
+            ind = int(args[0].size[-1])
+            value = Range(left=0, right=ind-1)
+        except:
+            value = Range(left=0, right=Solver.add_variable(name="topkv2_R", dtype=3))
+        return [InferValue.expanddims(args, node), value]
 
     @staticmethod
     def transpose(args: list, node):
