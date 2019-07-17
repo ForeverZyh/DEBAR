@@ -6,6 +6,7 @@ import math
 class Solver:
     solver = z3.Solver()
     index = {}
+    variable_by_name = {}
 
     @staticmethod
     def add_variable(name, dtype):
@@ -14,13 +15,17 @@ class Solver:
         variable_name = name + "_" + str(Solver.index[name])
         Solver.index[name] += 1
         if dtype in [3]:
-            return z3.Int(variable_name + "_Int")
+            real_name = variable_name +  "_Int"
+            Solver.variable_by_name[real_name] = z3.Int(real_name)
         elif dtype in [1]:
-            return z3.Real(variable_name + "_Real")
+            real_name = variable_name + "_Real"
+            Solver.variable_by_name[real_name] = z3.Real(real_name)
         elif dtype in [10]:
-            return z3.Bool(variable_name + "_Bool")
+            real_name = variable_name + "_Bool"
+            Solver.variable_by_name[real_name] = z3.Bool(real_name)
         else:
             raise NotImplementedError("Cannot Recognize: ", dtype)
+        return Solver.variable_by_name[real_name]
 
     @staticmethod
     def max(x, ys_):

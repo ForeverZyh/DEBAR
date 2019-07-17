@@ -81,7 +81,10 @@ if __name__ == "__main__":
             #     print(x)
             # print(str(S.check()))
             if str(S.check()) == "sat":
-                print(S.model())
+                it = S.model()
+                print(it)
+                for x in it:
+                    graph.write(str(x) + ": " + str(it[x]))
                 is_sat = True
                 break
             if str(S.check()) == "unknown":
