@@ -92,7 +92,7 @@ if __name__ == "__main__":
             # print(str(S.check()))
             if str(S.check()) == "sat":
                 it = S.model()
-                print(it)
+#                 print(it)
                 for x in it:
                     graph.write(str(x) + ": " + str(it[x]))
                 is_sat = True

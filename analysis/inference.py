@@ -163,11 +163,22 @@ class InferValue:
     @staticmethod
     def conv2d(args: list, node):
         assert len(args) == 2
-        attrs = node.attr
         ind = 1
         for x in args[1].size[:-1]:
             ind *= int(x)
         value = Range(name="conv2d", dtype=args[0].dtype)
+        ends = [args[0].value.left * args[1].value.left * ind, args[0].value.left * args[1].value.right * ind,
+                args[0].value.right * args[1].value.left * ind, args[0].value.right * args[1].value.right * ind]
+        return value, z3.And(Solver.min(value.left, ends),
+                             Solver.max(value.right, ends))
+    
+    @staticmethod
+    def depthwiseconv2dnative(args: list, node):
+        assert len(args) == 2
+        ind = 1
+        for x in args[1].size[:2]:
+            ind *= int(x)
+        value = Range(name="depthwiseconv2dnative", dtype=args[0].dtype)
         ends = [args[0].value.left * args[1].value.left * ind, args[0].value.left * args[1].value.right * ind,
                 args[0].value.right * args[1].value.left * ind, args[0].value.right * args[1].value.right * ind]
         return value, z3.And(Solver.min(value.left, ends),
@@ -494,6 +505,14 @@ class InferValue:
                     args[0].value.right * left, args[0].value.right * right]
             return value, z3.And(Solver.min(value.left, ends),
                                  Solver.max(value.right, ends))
+        
+    @staticmethod
+    def neg(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            return Range(left=-args[0].value.right, right=-args[0].value.left)
+        else:
+            return -args[0].value
 
     @staticmethod
     def nonmaxsuppressionv3(args: list, node):
@@ -586,15 +605,27 @@ class InferValue:
     @staticmethod
     def realdiv(args: list, node):
         assert len(args) == 2
-        if isinstance(args[1].value, Range):
-            ends = [args[0].value.left / args[1].value.left, args[0].value.left / args[1].value.right,
-                    args[0].value.right / args[1].value.left, args[0].value.right / args[1].value.right]
+        try:
+            x = float(args[0].value)
+        except:
+            x = InferValue.expanddims([args[0]], node)
+        try:
+            y = float(args[1].value)
+        except:
+            y = InferValue.expanddims([args[1]], node)
+        
+        if isinstance(x, Range) and isinstance(y, Range):
+            ends = [x.left / y.left, x.left / y.right, x.right / y.left, x.right / y.right]
             value = Range(name="realdiv", dtype=args[0].dtype)
             return value, z3.And(Solver.min(value.left, ends),
                                  Solver.max(value.right, ends))
+        elif not isinstance(y, Range):
+            return x * (1 / y)
         else:
-            y = float(args[1].value)
-            return args[0].value * (1 / y)
+            ends = [x / y.left, x / y.right]
+            value = Range(name="realdiv", dtype=args[0].dtype)
+            return value, z3.And(Solver.min(value.left, ends),
+                                 Solver.max(value.right, ends))
 
     @staticmethod
     def relu(args: list, node):
@@ -716,7 +747,7 @@ class InferValue:
 
             return Range(left=left, right=right), z3.And(cons)
         else:
-            return math.sqrt(args[0].value)
+            return np.sqrt(args[0].value)
 
     @staticmethod
     def squareddifference(args: list, node):

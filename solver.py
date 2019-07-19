@@ -1,6 +1,7 @@
 import z3
 from utils import resolve_type
 import math
+import numpy as np
 
 
 class Solver:
@@ -147,11 +148,11 @@ def meet(range, range_const: Range):
                 return True
         else:
             if range_const.left is not None and range_const.right is not None:
-                return bool(range_const.left <= range <= range_const.right)
+                return bool(np.all(range_const.left <= range) and np.all(range <= range_const.right))
             if range_const.right is not None:
-                return bool(range <= range_const.right)
+                return bool(np.all(range <= range_const.right))
             if range_const.left is not None:
-                return bool(range_const.left <= range)
+                return bool(np.all(range_const.left <= range))
             else:
                 return True
     else:
