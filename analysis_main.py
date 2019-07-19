@@ -13,7 +13,7 @@ except:
         "Please run 'python test_script PBTEXT_FILENAME'.\nAborted...")
     exit(1)
 
-rule = ["Log", "Exp", "RealDiv", "Sqrt", "Rsqrt"]
+rule = ["Log", "Exp", "RealDiv", "Sqrt", "Rsqrt", "Expm1", "Log1p", "Reciprocal"]
 # rule = ["RealDiv"]
 if __name__ == "__main__":
     graph = Graph(pbtxt, "verbose.txt")
@@ -37,7 +37,7 @@ if __name__ == "__main__":
         if constraints is None:
             continue
 
-        if suspected_node.op == "Exp":
+        if suspected_node.op in ["Exp", "Expm1"]:
             suspected_node_input = Range(left=math.log(OVERFLOW_LIMIT), right=None, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
             additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
@@ -64,6 +64,16 @@ if __name__ == "__main__":
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
             additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
                                                                        suspected_node_input)
+        elif suspected_node.op == "Log1p":
+            suspected_node_input = Range(left=-UNDERFLOW_LIMIT - 1, right=UNDERFLOW_LIMIT - 1, const_type=0)
+            backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
+            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                       suspected_node_input)
+        elif suspected_node.op == "Reciprocal":
+            suspected_node_input_y = Range(left=-UNDERFLOW_LIMIT, right=UNDERFLOW_LIMIT, const_type=0)
+            backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
+            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                       suspected_node_input_y)
         else:
             raise NotImplementedError("No rule for ", suspected_node.op)
 
