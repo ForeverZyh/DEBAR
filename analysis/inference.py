@@ -83,6 +83,11 @@ class InferValue:
             return args[1].value
         else:
             return args[0].value
+        
+    @staticmethod
+    def avgpool(args: list, node):
+        assert len(args) == 1
+        return InferValue.expanddims(args, node)
 
     @staticmethod
     def batchmatmul(args: list, node):

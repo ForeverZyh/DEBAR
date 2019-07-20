@@ -13,10 +13,7 @@ def const(attrs):
 
 
 def iteratorv2(attrs):
-    dtypes = attrs["output_types"].list.type
-    # print(dtypes)
-    value = [Range(name="iteratorv2", dtype=dtype) for dtype in dtypes]
-    return value
+    return oneshotiterator(attrs)
 
 
 def variablev2(attrs):

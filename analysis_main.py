@@ -28,7 +28,6 @@ if __name__ == "__main__":
 
     for suspected_node in suspected_nodes:
         # graph.draw(graph.backward_slice(suspected_node.name, set()), "real_interested")
-        print(suspected_node.op, suspected_node.name)
         if suspected_node.op == "RealDiv":
             constraints = graph.forward_analysis(graph.node_by_name[graph.graph_backward[suspected_node.name][1][0]],
                                                  suspected_node)
@@ -101,8 +100,10 @@ if __name__ == "__main__":
                 has_unknown = True
 
         if is_sat:
+            print(suspected_node.op, suspected_node.name)
             print("sat")
         elif has_unknown:
+            print(suspected_node.op, suspected_node.name)
             print("unknown")
-        else:
-            print("unsat")
+#         else:
+#             print("unsat")
