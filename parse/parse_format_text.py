@@ -6,17 +6,20 @@ import ast
 import numpy as np
 
 
-def const(attrs):
+def const(node):
+    attrs = node.attr
     tensor = attrs["value"].tensor
     value = tensor_util.MakeNdarray(tensor)
     return value
 
 
-def iteratorv2(attrs):
-    return oneshotiterator(attrs)
+def iteratorv2(node):
+    attrs = node.attr
+    return oneshotiterator(node)
 
 
-def variablev2(attrs):
+def variablev2(node):
+    attrs = node.attr
     dtype = attrs["dtype"].type
     # value = Range(name="variablev2", dtype=dtype)
     # return value, value.left <= value.right
@@ -28,10 +31,11 @@ def variablev2(attrs):
         return Range(name="variablev2", dtype=dtype)
 
 
-def oneshotiterator(attrs):
+def oneshotiterator(node):
+    attrs = node.attr
     dtypes = attrs["output_types"].list.type
     value = []
-    print(attrs)
+    print(node)
     while True:
         x = input("Please specify the range of inputs\n"
                   "e.g. [[-1, 1], [0, None]] means the first range is [-1, 1] and the second range is [0 ,inf):\n")
@@ -60,9 +64,10 @@ def oneshotiterator(attrs):
     return value
 
 
-def placeholder(attrs):
+def placeholder(node):
+    attrs = node.attr
     dtype = attrs["dtype"].type
-    print(attrs)
+    print(node)
     while True:
         x = input("Please specify the range of the placeholder \n"
                   "e.g. [-1, 1] means the range is [-1, 1] \n"

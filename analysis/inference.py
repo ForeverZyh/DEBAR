@@ -162,8 +162,7 @@ class InferValue:
     @staticmethod
     def const(args: list, node):
         assert len(args) == 0
-        attrs = node.attr
-        return getattr(parse_format_text, node.op.lower())(attrs)
+        return getattr(parse_format_text, node.op.lower())(node)
 
     @staticmethod
     def conv2d(args: list, node):
@@ -341,8 +340,7 @@ class InferValue:
     @staticmethod
     def iteratorv2(args: list, node):
         assert len(args) == 0
-        attrs = node.attr
-        return getattr(parse_format_text, node.op.lower())(attrs)
+        return getattr(parse_format_text, node.op.lower())(node)
 
     @staticmethod
     def less(args: list, node):
@@ -539,8 +537,7 @@ class InferValue:
     @staticmethod
     def oneshotiterator(args: list, node):
         assert len(args) == 0
-        attrs = node.attr
-        return getattr(parse_format_text, node.op.lower())(attrs)
+        return getattr(parse_format_text, node.op.lower())(node)
 
     @staticmethod
     def pack(args: list, node):
@@ -576,8 +573,7 @@ class InferValue:
     @staticmethod
     def placeholder(args: list, node):
         assert len(args) == 0
-        attrs = node.attr
-        return getattr(parse_format_text, node.op.lower())(attrs)
+        return getattr(parse_format_text, node.op.lower())(node)
 
     @staticmethod
     def prod(args: list, node):
@@ -880,14 +876,17 @@ class InferValue:
     @staticmethod
     def varhandleop(args: list, node):
         assert len(args) == 0
-        attrs = node.attr
-        return getattr(parse_format_text, "variablev2")(attrs)
+        return getattr(parse_format_text, "variablev2")(node)
+    
+    @staticmethod
+    def variable(args: list, node):
+        assert len(args) == 0
+        return getattr(parse_format_text, "variablev2")(node)
 
     @staticmethod
     def variablev2(args: list, node):
         assert len(args) == 0
-        attrs = node.attr
-        return getattr(parse_format_text, node.op.lower())(attrs)
+        return getattr(parse_format_text, node.op.lower())(node)
 
     @staticmethod
     def where(args: list, node):

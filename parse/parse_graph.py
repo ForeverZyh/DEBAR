@@ -242,8 +242,8 @@ class Graph:
                 warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
             else:
                 try:
-                    if str(self.node_output[son].size) == "<unknown>":
-                        new_size = getattr(InferSize, u.op.lower())(parents_aps, u)
+#                     if str(self.node_output[son].size) == "<unknown>":
+#                         new_size = getattr(InferSize, u.op.lower())(parents_aps, u)
                     temp = getattr(InferValue, u.op.lower())(parents_aps, u)
                 except AttributeError:
                     if u.op.lower() in ["assert"]:
