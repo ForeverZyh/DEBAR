@@ -3,12 +3,12 @@ import parse.parse_format_text as parse_format_text
 import math
 import copy
 import warnings
-from solver import Range, Solver
+from solver import Range, Solver, Array
 import numpy as np
 import z3
 from utils import OVERFLOW_D, UNDERFLOW_D, OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 from utils import resolve_type
-from itertools import combinations_with_replacement
+from itertools import combinations_with_replacement, product
 
 turn_on_bool = False
 
@@ -1071,80 +1071,112 @@ class InferValue:
 class InferArray:
     @staticmethod
     def add(args: list, node):
-        assert len(args) == 2
+        assert len(args) == 2 and len(args[0].size) == len(args[1].size)
+        ind = len(args[0].size)
+        for i in range(ind):
+            assert args[0].size[i] == args[1].size[i]
+        ret = Array("tmp", args[0].size)
+        ret.block_to_symbol = dict()
+        ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
+        keys0 = args[0].array.get_corresponding_keys(ret.index_slices)
+        keys1 = args[1].array.get_corresponding_keys(ret.index_slices)
+        i = 0
+        for indexes in product(*ret.index_slices):
+            ret.block_to_symbol[tuple(indexes)] = keys0[i] + keys1[i]
+            i += 1
 
-    @staticmethod
-    def addn(args: list, node):
-        assert len(args) > 0
+        return ret
 
     @staticmethod
     def concatv2(args: list, node):
-        return InferValue.pack(args[:-1], node)
+        assert len(args) > 2
+        ind = len(args[0].size)
+        concat_ind = int(args[-1].value)
+        ret = Array("tmp", args[0].size)
+        ret.block_to_symbol = dict()
+        index_slices = []
+        for arg in args[:-1]:
+            index_slices.append(copy.deepcopy(arg.array.index_slices))
+            index_slices[-1][concat_ind] = None
 
-    @staticmethod
-    def expanddims(args: list, node):
-        return args[0].value if isinstance(args[0].value, Range) else Range(left=resolve_type(np.min(args[0].value)),
-                                                                            right=resolve_type(np.max(args[0].value)))
+        ret.index_slices = Array.join_index_slices(index_slices[0], index_slices[1])
+        for i in range(2, len(args) - 1):
+            ret.index_slices = Array.join_index_slices(ret.index_slices, index_slices[i])
+        tmp_ret_index_slices = copy.deepcopy(ret.index_slices)
+        ret.index_slices[concat_ind] = []
+        split_point = 0
+        for i in range(len(args) - 1):
+            tmp_ret_index_slices[concat_ind] = list(np.array(args[i].array.index_slices[concat_ind]) + split_point)
+            ret.index_slices[concat_ind] += tmp_ret_index_slices[concat_ind]
+            tmp_keys = args[i].array.get_corresponding_keys(tmp_ret_index_slices)
+            split_point += int(args[i].size[concat_ind])
+            i = 0
+            for indexes in product(*tmp_ret_index_slices):
+                ret.block_to_symbol[tuple(indexes)] = tmp_keys[i]
+                i += 1
+
+        return ret
 
     @staticmethod
     def identity(args: list, node):
         assert len(args) == 1
-
-    @staticmethod
-    def neg(args: list, node):
-        assert len(args) == 1
+        return args[0].array
 
     @staticmethod
     def pack(args: list, node):
-        try:
-            maxs = [args[i].value.right if isinstance(args[i].value, Range) else resolve_type(np.max(args[i].value)) for
-                    i in range(len(args))]
-            mins = [args[i].value.left if isinstance(args[i].value, Range) else resolve_type(np.min(args[i].value)) for
-                    i in range(len(args))]
-            if None in maxs or None in mins:
-                return None
-            try:
-                return Range(left=min(mins), right=max(maxs))
-            except:
-                value = Range(name="pack", dtype=args[0].dtype)
-                return value, z3.And(Solver.min(value.left, mins), Solver.max(value.right, maxs))
-        except:
-            # boolean
-            has_zero = []
-            has_one = []
-            for i in range(len(args)):
-                if isinstance(args[i].value, Range):
-                    has_zero.append(args[i].value.left)
-                    has_one.append(args[i].value.right)
-                else:
-                    has_zero.append(not bool(np.all(args[i].value)))
-                    has_one.append(bool(np.any(args[i].value)))
-            return Range(left=z3.Or(has_zero), right=z3.Or(has_one))
-
-    @staticmethod
-    def pad(args: list, node):
-        return InferValue.expanddims(args, node)
-
-    @staticmethod
-    def split(args: list, node):
-        assert len(args) == 2
-
-    @staticmethod
-    def squeeze(args: list, node):
-        assert len(args) == 1
+        return InferArray.concatv2(args + [AbstractInterpretation(value=len(args[0].size) - 1)], node)
 
     @staticmethod
     def sub(args: list, node):
-        assert len(args) == 2
+        assert len(args) == 2 and len(args[0].size) == len(args[1].size)
+        ind = len(args[0].size)
+        for i in range(ind):
+            assert args[0].size[i] == args[1].size[i]
+        ret = Array("tmp", args[0].size)
+        ret.block_to_symbol = dict()
+        ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
+        keys0 = args[0].array.get_corresponding_keys(ret.index_slices)
+        keys1 = args[1].array.get_corresponding_keys(ret.index_slices)
+        i = 0
+        for indexes in product(*ret.index_slices):
+            ret.block_to_symbol[tuple(indexes)] = keys0[i] - keys1[i]
+            i += 1
 
-    @staticmethod
-    def tile(args: list, node):
-        assert len(args) == 2
+        return ret
 
     @staticmethod
     def transpose(args: list, node):
         assert len(args) == 2
+        ret = Array("tmp", args[0].size)
+        ret.index_slices = []
+        ret.block_to_symbol = {}
+        for x in np.array(args[1].value):
+            ret.index_slices += args[0].array.index_slices[x]
+        for indexes in product(*args[0].array.index_slices):
+            new_indexes = ()
+            for x in np.array(args[1].value):
+                new_indexes += (indexes[x],)
+
+            ret.block_to_symbol[new_indexes] = args[0].array.block_to_symbol[tuple(indexes)]
+
+        return ret
 
     @staticmethod
     def unpack(args: list, node):
         assert len(args) == 1
+        axis = int(node.attr["axis"].i)
+        rets = []
+        index_slices = copy.deepcopy(args[0].array.index_slices)
+        for i in range(int(args[0].size[axis])):
+            rets.append(Array("tmp", args[0].size))
+            rets[-1].index_slices = copy.deepcopy(args[0].array.index_slices)
+            rets[-1].index_slices[axis] = [1]
+
+            index_slices[axis] = [i]
+            tmp_keys = args[0].array.get_corresponding_keys(index_slices)
+            ii = 0
+            for indexes in product(*index_slices):
+                rets[-1].block_to_symbol[tuple(indexes)] = tmp_keys[ii]
+                ii += 1
+
+        return rets

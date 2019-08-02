@@ -1,14 +1,13 @@
 from google.protobuf import text_format
 import tensorflow as tf
-from analysis.inference import InferValue
+from analysis.inference import InferValue, InferArray
 from analysis.abstract_interpretation import AbstractInterpretation
 import queue
 from graphviz import Digraph
 import warnings
 import z3
 from solver import meet, check_range_const
-from itertools import product
-from solver import Range, Array
+from solver import Range, Array, Solver
 import sympy
 
 
@@ -90,12 +89,12 @@ class Graph:
                 self.node_output[node.name] = AbstractInterpretation(
                     size=[node_value.shape for node_value in node_values],
                     dtype=[node_value.dtype for node_value in node_values],
-                    array=[Array(sympy.symbols(node.name + ":" + str(i)), len(node_value.shape)) for (i, node_value) in
+                    array=[Array(sympy.symbols(node.name + ":" + str(i)), node_value.shape) for (i, node_value) in
                            enumerate(node_values)])
             else:
                 self.node_output[node.name] = AbstractInterpretation(
                     size=node_values[0].shape, dtype=node_values[0].dtype,
-                    array=Array(sympy.symbols(node.name), len(node_values[0].shape)))
+                    array=Array(sympy.symbols(node.name), node_values[0].shape))
             for in_node_raw in node.input:
                 is_control = False
                 if in_node_raw[0] == '^':
@@ -239,6 +238,7 @@ class Graph:
                     all_none &= parents_aps[-1].has_none()
 
             temp = None
+            temp_array = None
             if all_none and len(parents_aps) > 0:
                 warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
             else:
@@ -254,12 +254,34 @@ class Graph:
                 # except:
                 #     warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
                 #     temp = None
+                try:
+                    temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
+                except:
+                    pass
 
             if isinstance(temp, tuple):
                 self.node_output[son].value = temp[0]
                 self.node_output[son].constraints = temp[1]
             else:
                 self.node_output[son].value = temp
+
+            if temp_array is not None:
+                self.node_output[son].array = temp_array
+                temp_constraints = [] if self.node_output[son].constraints is None else [
+                    self.node_output[son].constraints]
+                if isinstance(temp_array, list):
+                    temp = []
+                    for (i, tmp_array) in enumerate(temp_array):
+                        left, right = self.get_left_right(tmp_array.get_possible_values())
+                        temp.append(Range(name="array_ai", dtype=self.node_output[son].dtype[i]))
+                        temp_constraints += [Solver.min(temp[-1].left, left), Solver.max(temp[-1].right, right)]
+                else:
+                    left, right = self.get_left_right(temp_array.get_possible_values())
+                    temp = Range(name="array_ai", dtype=self.node_output[son].dtype)
+                    temp_constraints += [Solver.min(temp.left, left), Solver.max(temp.right, right)]
+
+                self.node_output[son].value = temp
+                self.node_output[son].constraints = z3.And(temp_constraints)
 
             self.write(self.node_output[son])
 
@@ -275,6 +297,33 @@ class Graph:
             yield meet(self.node_output[node.name].value, range_const)
         else:
             raise NotImplementedError
+
+    def get_left_right(self, linear_expressions):
+        left = []
+        right = []
+        for linear_expression in linear_expressions:
+            left_ele = None
+            right_ele = None
+            for (factor, name) in linear_expression:
+                if name.find(":") != -1:
+                    pos = name.find(':')
+                    index = int(name[pos + 1:])
+                    name = name[:pos]
+                else:
+                    index = None
+
+                value = self.node_output[name].index_of(index).value
+                if left_ele is None:
+                    left_ele = value.left if isinstance(value, Range) else value
+                    right_ele = value.right if isinstance(value, Range) else value
+                else:
+                    left_ele += value.left if isinstance(value, Range) else value
+                    right_ele += value.right if isinstance(value, Range) else value
+
+            left.append(left_ele)
+            right.append(right_ele)
+
+        return left, right
 
 
 def main():

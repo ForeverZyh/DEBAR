@@ -2,6 +2,7 @@ import z3
 from utils import resolve_type
 import math
 import numpy as np
+from itertools import product
 
 
 class Solver:
@@ -126,9 +127,63 @@ class Range:
 
 
 class Array:
-    def __init__(self, symbol, len):
-        self.index_slices = [None for _ in range(len)]
-        self.block_to_symbol = {tuple([None for _ in range(len)]): symbol}
+    def __init__(self, symbol, size):
+        self.index_slices = []
+        for i in range(len(size)):
+            try:
+                self.index_slices.append([int(size[i])])
+            except:
+                self.index_slices.append(None)
+        self.block_to_symbol = {tuple([None if x is None else x[0] for x in self.index_slices]): symbol}
+
+    @staticmethod
+    def join_index_slices(a, b):
+        ret = []
+        for i in range(len(a)):
+            if a[i] is None and b[i] is None:
+                ret.append(None)
+            elif a[i] is None:
+                ret.append(b[i])
+            elif b[i] is None:
+                ret.append(a[i])
+            else:
+                c = np.unique(a + b)
+                ret.append(list(c))
+
+        return ret
+
+    def get_corresponding_keys(self, index_slices):
+        iargs = [None if x is None else 0 for x in self.index_slices]
+        ret = []
+        for indexes in product(*index_slices):
+            key = ()
+            for i in range(len(indexes)):
+                if indexes[i] is not None:
+                    while indexes[i] > self.index_slices[i][iargs[i]]:
+                        iargs[i] += 1
+
+                    key += (self.index_slices[i][iargs[i]],)
+                else:
+                    key += (None,)
+
+            ret.append(self.block_to_symbol[key])
+
+        return ret
+
+    def get_possible_values(self):
+        ret = []
+        for ix in self.block_to_symbol:
+            flag = True
+            x = self.block_to_symbol[ix]
+            for y in ret:
+                if y.equals(x):
+                    flag = False
+                    break
+
+            if flag:
+                ret.append(x)
+
+        return [str_2_linear_expression(str(x)) for x in ret]
 
     def __str__(self):
         ret_str = ""
@@ -181,3 +236,46 @@ def meet(range, range_const: Range):
                 return False
         else:
             return range_const.left == range and range == range_const.right
+
+
+def str_2_linear_expression(x: str):
+    ret = []
+    x += " "
+    if x[0] != '-' and x[0] != '+':
+        x = "+" + x
+    sign = 1
+    factor = 0
+    symbol = ""
+    has_sign = False
+    has_factor = False
+    i = 0
+    while i < len(x):
+        if x[i] in ['-', '+']:
+            if x[i] == '-':
+                sign = -1
+            else:
+                sign = 1
+            has_sign = True
+        elif has_factor:
+            if x[i] == ' ':
+                ret.append((sign * factor, symbol))
+                sign = 1
+                factor = 0
+                symbol = ""
+                has_sign = False
+                has_factor = False
+            else:
+                symbol += x[i]
+        elif has_sign:
+            if '0' <= x[i] <= '9':
+                factor = factor * 10 + ord(x[i]) - 48
+            elif x[i] == '*':
+                has_factor = True
+            elif x[i] != ' ':
+                factor = 1
+                has_factor = True
+                symbol += x[i]
+
+        i += 1
+
+    return ret
