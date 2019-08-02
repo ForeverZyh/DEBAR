@@ -74,7 +74,10 @@ class InferValue:
     @staticmethod
     def argmax(args: list, node):
         assert len(args) == 2
-        return args[0].value
+        try:
+            return Range(left=0, right=int(args[0].size[int(args[1].value)]) - 1)
+        except:
+            return Range(left=0, right=Solver.add_variable("argmax_R", 3))
 
     @staticmethod
     def assign(args: list, node):
@@ -83,7 +86,7 @@ class InferValue:
             return args[1].value
         else:
             return args[0].value
-        
+
     @staticmethod
     def avgpool(args: list, node):
         assert len(args) == 1
@@ -175,7 +178,7 @@ class InferValue:
                 args[0].value.right * args[1].value.left * ind, args[0].value.right * args[1].value.right * ind]
         return value, z3.And(Solver.min(value.left, ends),
                              Solver.max(value.right, ends))
-    
+
     @staticmethod
     def depthwiseconv2dnative(args: list, node):
         assert len(args) == 2
@@ -508,7 +511,7 @@ class InferValue:
                     args[0].value.right * left, args[0].value.right * right]
             return value, z3.And(Solver.min(value.left, ends),
                                  Solver.max(value.right, ends))
-        
+
     @staticmethod
     def neg(args: list, node):
         assert len(args) == 1
@@ -522,7 +525,7 @@ class InferValue:
         assert len(args) == 5
         try:
             ind = int(args[1].size[0])
-            return Range(left=0, right=ind-1)
+            return Range(left=0, right=ind - 1)
         except:
             return Range(left=0, right=Solver.add_variable("nonmaxsuppressionv3_R", 3))
 
@@ -614,7 +617,7 @@ class InferValue:
             y = float(args[1].value)
         except:
             y = InferValue.expanddims([args[1]], node)
-        
+
         if isinstance(x, Range) and isinstance(y, Range):
             ends = [x.left / y.left, x.left / y.right, x.right / y.left, x.right / y.right]
             value = Range(name="realdiv", dtype=args[0].dtype)
@@ -848,13 +851,13 @@ class InferValue:
     def tile(args: list, node):
         assert len(args) == 2
         return InferValue.expanddims(args, node)
-    
+
     @staticmethod
     def topkv2(args: list, node):
         assert len(args) == 2
         try:
             ind = int(args[0].size[-1])
-            value = Range(left=0, right=ind-1)
+            value = Range(left=0, right=ind - 1)
         except:
             value = Range(left=0, right=Solver.add_variable(name="topkv2_R", dtype=3))
         return [InferValue.expanddims(args, node), value]
@@ -877,7 +880,7 @@ class InferValue:
     def varhandleop(args: list, node):
         assert len(args) == 0
         return getattr(parse_format_text, "variablev2")(node)
-    
+
     @staticmethod
     def variable(args: list, node):
         assert len(args) == 0
@@ -1065,187 +1068,83 @@ class InferValue:
             return np.tanh(args[0].value)
 
 
-def clip_value(x: Range):
-    y = copy.deepcopy(x)
-    assert x.const_type is not None
-    if y.left is not None:
-        if -UNDERFLOW_LIMIT < y.left < 0:
-            # l = -1e-50
-            # type==0: l_var can be 0
-            # type==1: l_var cannot be 0
-            if x.const_type == 0:
-                y.left = 0
-            else:
-                y.left = -UNDERFLOW_LIMIT
-        elif 0 < y.left < UNDERFLOW_LIMIT:
-            # l = 1e-50
-            # type==0: l_var cannot be 0
-            # type==1: l_var should be 0
-            if x.const_type == 0:
-                y.left = UNDERFLOW_LIMIT
-            else:
-                y.left = 0
-        elif y.left > OVERFLOW_LIMIT:
-            # l = 1e50
-            # type==0: cannot meet the condition
-            # type==1: l_var should be OVERFLOW_LIMIT, but r_var cannot meet the condition
-            return Range(left=1, right=0, const_type=0)  # cannot meet the condition
-        elif y.left < -OVERFLOW_LIMIT:
-            # l = -1e50
-            # type == 0: left no constraint
-            # type == 1: cannot meet the condition
-            if x.const_type == 0:
-                y.left = None
-            else:
-                return Range(left=1, right=0, const_type=0)  # cannot meet the condition
-    if y.right is not None:
-        if -UNDERFLOW_LIMIT < y.right < 0:
-            # r = -1e-50
-            # type==0: r_var cannot be 0
-            # type==1: r_var should be 0
-            if x.const_type == 0:
-                y.right = -UNDERFLOW_LIMIT
-            else:
-                y.right = 0
-        elif 0 < y.right < UNDERFLOW_LIMIT:
-            # r = 1e-50
-            # type==0: r_var should be 0
-            # type==1: r_var can be UNDERFLOW_LIMIT
-            if x.const_type == 0:
-                y.right = 0
-            else:
-                y.right = UNDERFLOW_LIMIT
-        elif y.right > OVERFLOW_LIMIT:
-            # r = 1e50
-            # type==0: right no constraint
-            # type==1: cannot meet the condition
-            if x.const_type == 0:
-                y.right = None
-            else:
-                return Range(left=1, right=0, const_type=0)  # cannot meet the condition
-        elif y.right < -OVERFLOW_LIMIT:
-            return Range(left=1, right=0, const_type=0)  # cannot meet the condition
-    return y
-
-
-class InferConstant:
+class InferArray:
     @staticmethod
-    def add(args: list, output: Range, node):
+    def add(args: list, node):
         assert len(args) == 2
-        # let's ignore the output.const_type
-        if len(args[1].size) != 0:
-            args[0], args[1] = args[1], args[0]
-        if len(args[1].size) != 0:
-            raise NotImplementedError("we suppose one argument is a 0-d variable not a tensor")
-
-        try:
-            y_const = int(args[1].value)
-            yield [Range(left=output.left - y_const, right=output.right - y_const, const_type=0),
-                   Range(left=y_const, right=y_const, const_type=0)]
-        except:
-            # y == 0
-            yield [Range(left=output.left, right=output.right, const_type=0), Range(left=0, right=0, const_type=0)]
-            # divide the (-inf, inf) range to [-1e38, -1e-37] and [1e-37, 1e38]
-            for y_degree in range(UNDERFLOW_D, OVERFLOW_D, 1):
-                for y_sign in [-1, 1]:
-                    if y_sign == 1:
-                        y_l = math.pow(10, y_degree)
-                        y_r = math.pow(10, y_degree + 1)
-                    else:
-                        y_r = -math.pow(10, y_degree)
-                        y_l = -math.pow(10, y_degree + 1)
-                    yield [Range(left=None if output.left is None else output.left - y_r,
-                                 right=None if output.right is None else output.right - y_l, const_type=0),
-                           Range(left=y_l, right=y_r, const_type=0)]
 
     @staticmethod
-    def exp(args: list, output: Range, node):
+    def addn(args: list, node):
+        assert len(args) > 0
+
+    @staticmethod
+    def concatv2(args: list, node):
+        return InferValue.pack(args[:-1], node)
+
+    @staticmethod
+    def expanddims(args: list, node):
+        return args[0].value if isinstance(args[0].value, Range) else Range(left=resolve_type(np.min(args[0].value)),
+                                                                            right=resolve_type(np.max(args[0].value)))
+
+    @staticmethod
+    def identity(args: list, node):
         assert len(args) == 1
-        assert not (z3.is_arith(output.left) or z3.is_arith(output.right))
-        if output.right is not None and output.right < 0:
-            return [Range(left=1, right=0, const_type=0)]  # cannot meet the condition
-        if output.left is None or output.left <= 0:
-            left = None
-        else:
-            left = math.log(output.left)
-        if output.right is not None and output.right == 0:
-            right = math.log(UNDERFLOW_LIMIT)
-        else:
-            right = None if output.right is None else math.log(output.right)
-        yield [clip_value(Range(left=left, right=right, const_type=output.const_type))]
 
     @staticmethod
-    def realdiv(args: list, output: Range, node):
+    def neg(args: list, node):
+        assert len(args) == 1
+
+    @staticmethod
+    def pack(args: list, node):
+        try:
+            maxs = [args[i].value.right if isinstance(args[i].value, Range) else resolve_type(np.max(args[i].value)) for
+                    i in range(len(args))]
+            mins = [args[i].value.left if isinstance(args[i].value, Range) else resolve_type(np.min(args[i].value)) for
+                    i in range(len(args))]
+            if None in maxs or None in mins:
+                return None
+            try:
+                return Range(left=min(mins), right=max(maxs))
+            except:
+                value = Range(name="pack", dtype=args[0].dtype)
+                return value, z3.And(Solver.min(value.left, mins), Solver.max(value.right, maxs))
+        except:
+            # boolean
+            has_zero = []
+            has_one = []
+            for i in range(len(args)):
+                if isinstance(args[i].value, Range):
+                    has_zero.append(args[i].value.left)
+                    has_one.append(args[i].value.right)
+                else:
+                    has_zero.append(not bool(np.all(args[i].value)))
+                    has_one.append(bool(np.any(args[i].value)))
+            return Range(left=z3.Or(has_zero), right=z3.Or(has_one))
+
+    @staticmethod
+    def pad(args: list, node):
+        return InferValue.expanddims(args, node)
+
+    @staticmethod
+    def split(args: list, node):
         assert len(args) == 2
-        assert not (z3.is_arith(output.left) or z3.is_arith(output.right))
-        # let's ignore the output.const_type
-        # divide the (-inf, inf) range to [-1e38, -1e-37] and [1e-37, 1e38]
-        for y_degree in range(UNDERFLOW_D, OVERFLOW_D, 1):
-            y = Range(left=math.pow(10, y_degree), right=math.pow(10, y_degree + 1), const_type=0)
-            # x / y >= l, y > 0 <=> x >= y * l <=> x >= min(y.l * l, y.r * l)
-            # x / y <= r, y > 0 <=> x <= y * r <=> x <= max(y.l * r, y.r * r)
-            x = Range(
-                left=None if output.left is None else min(y.left * output.left, y.right * output.left),
-                right=None if output.right is None else max(y.left * output.right, y.right * output.right),
-                const_type=0
-            )
-            yield [clip_value(x), y]
-
-            y = Range(left=-math.pow(10, y_degree + 1), right=-math.pow(10, y_degree))
-            # x / y >= l, y < 0 <=> x <= y * l <=> x <= max(y.l * l, y.r * l)
-            # x / y <= r, y < 0 <=> x >= y * r <=> x >= min(y.l * r, y.r * r)
-            x = Range(
-                right=None if output.left is None else max(y.left * output.left, y.right * output.left),
-                left=None if output.right is None else min(y.left * output.right, y.right * output.right),
-                const_type=0
-            )
-            yield [clip_value(x), y]
 
     @staticmethod
-    def softmax(args: list, output: Range, node):
-        assert len(args) == 1 and args[0].size[-1] > 0
-        assert not (z3.is_arith(output.left) or z3.is_arith(output.right))
-        # let's ignore the output.const_type
-        ind = int(args[0].size[-1])
-        left = 0 if output.left is None else max(0, output.left)
-        right = 1 if output.right is None else min(1, output.right)
-        if left > right:
-            return [Range(left=1, right=0, const_type=0)]  # cannot meet the condition
-        if left == 0 and right == 0:
-            return [Range(left=1, right=0, const_type=0)]  # cannot meet the condition
-        if left == 1 and right == 1:
-            return [Range(left=1, right=0, const_type=0)]  # cannot meet the condition
-        if left == 0 and right == 1:
-            return [Range(left=None, right=None, const_type=0)]
-        if ind == 1:
-            if left <= 1 <= right:
-                return [Range(left=None, right=None, const_type=0)]
-            else:
-                return [Range(left=1, right=0, const_type=0)]  # cannot meet the condition
-
-        dis = 0
-        if right < 1:
-            # e^l / (e^l + (ind-1)*e^r) <= right
-            # e^l <= right*e^l + right*(ind-1)*e^r
-            # e^l <= right/(1-right)*(ind-1)*e^r
-            # l <= log(right/(1-right)*(ind-1))+r
-            dis = max(-(math.log(right) - math.log(1 - right) + math.log(ind - 1)), dis)
-        if left > 0:
-            # e^r / (e^r + (ind-1)*e^l) >= left
-            # e^r >= left*e^r + left*(ind-1)*e^l
-            # e^r >= left/(1-left)*(ind-1)*e^l
-            # r >= log(left/(1-left)*(ind-1))+l
-            dis = max(math.log(left) - math.log(1 - left) + math.log(ind - 1), dis)
-
-        l_var = Solver.add_variable("softmax_l", 1)
-        yield [Range(left=l_var, right=l_var + dis, const_type=1)]
+    def squeeze(args: list, node):
+        assert len(args) == 1
 
     @staticmethod
-    def sum(args: list, output: Range, node):
+    def sub(args: list, node):
         assert len(args) == 2
-        ind = int(args[0].size[args[1].value])
-        yield [clip_value(output * (1.0 / ind)), None]
 
+    @staticmethod
+    def tile(args: list, node):
+        assert len(args) == 2
 
-class InferSize:
-    pass
+    @staticmethod
+    def transpose(args: list, node):
+        assert len(args) == 2
+
+    @staticmethod
+    def unpack(args: list, node):
+        assert len(args) == 1

@@ -1,8 +1,6 @@
 from google.protobuf import text_format
 import tensorflow as tf
 from analysis.inference import InferValue
-from analysis.inference import InferConstant
-from analysis.inference import InferSize
 from analysis.abstract_interpretation import AbstractInterpretation
 import queue
 from graphviz import Digraph
@@ -10,7 +8,8 @@ import warnings
 import z3
 from solver import meet, check_range_const
 from itertools import product
-from solver import Range
+from solver import Range, Array
+import sympy
 
 
 class UnionSet:
@@ -90,10 +89,13 @@ class Graph:
             elif len(node_values) > 1:
                 self.node_output[node.name] = AbstractInterpretation(
                     size=[node_value.shape for node_value in node_values],
-                    dtype=[node_value.dtype for node_value in node_values])
+                    dtype=[node_value.dtype for node_value in node_values],
+                    array=[Array(sympy.symbols(node.name + ":" + str(i)), len(node_value.shape)) for (i, node_value) in
+                           enumerate(node_values)])
             else:
                 self.node_output[node.name] = AbstractInterpretation(
-                    size=node_values[0].shape, dtype=node_values[0].dtype)
+                    size=node_values[0].shape, dtype=node_values[0].dtype,
+                    array=Array(sympy.symbols(node.name), len(node_values[0].shape)))
             for in_node_raw in node.input:
                 is_control = False
                 if in_node_raw[0] == '^':
@@ -236,14 +238,11 @@ class Graph:
                     parents_aps.append(self.node_output[in_node_name].index_of(self.edge_index[(in_node_name, son)]))
                     all_none &= parents_aps[-1].has_none()
 
-            new_size = None
             temp = None
             if all_none and len(parents_aps) > 0:
                 warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
             else:
                 try:
-#                     if str(self.node_output[son].size) == "<unknown>":
-#                         new_size = getattr(InferSize, u.op.lower())(parents_aps, u)
                     temp = getattr(InferValue, u.op.lower())(parents_aps, u)
                 except AttributeError:
                     if u.op.lower() in ["assert"]:
@@ -256,8 +255,6 @@ class Graph:
                 #     warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
                 #     temp = None
 
-            if new_size is not None:
-                self.node_output[son].size = new_size
             if isinstance(temp, tuple):
                 self.node_output[son].value = temp[0]
                 self.node_output[son].constraints = temp[1]
@@ -278,26 +275,6 @@ class Graph:
             yield meet(self.node_output[node.name].value, range_const)
         else:
             raise NotImplementedError
-            # in_node_values = []
-            # for (in_node, is_control) in self.graph_backward[node.name]:
-            #     if not is_control:
-            #         in_node_values.append(self.node_output[in_node])
-            # for in_node_value_ranges in getattr(InferConstant, node.op.lower())(in_node_values, range_const, node):
-            #     idx = 0
-            #     gens = []
-            #     for (in_node, is_control) in self.graph_backward[node.name]:
-            #         if not is_control:
-            #             if in_node_value_ranges[idx] is not None:
-            #                 if not check_range_const(in_node_value_ranges[idx]):
-            #                     return False
-            #                 gens.append(
-            #                     self.backward_analysis_const(self.node_by_name[in_node], in_node_value_ranges[idx]))
-            #             idx += 1
-            #     for rets in product(*gens):
-            #         if False in rets:
-            #             yield False
-            #         else:
-            #             yield z3.And(rets)
 
 
 def main():

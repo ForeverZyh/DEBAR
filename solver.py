@@ -16,7 +16,7 @@ class Solver:
         variable_name = name + "_" + str(Solver.index[name])
         Solver.index[name] += 1
         if dtype in [3]:
-            real_name = variable_name +  "_Int"
+            real_name = variable_name + "_Int"
             Solver.variable_by_name[real_name] = z3.Int(real_name)
         elif dtype in [1]:
             real_name = variable_name + "_Real"
@@ -123,6 +123,24 @@ class Range:
         return Range(left=None if self.left is None else self.left + other,
                      right=None if self.right is None else self.right + other,
                      const_type=self.const_type)
+
+
+class Array:
+    def __init__(self, symbol, len):
+        self.index_slices = [None for _ in range(len)]
+        self.block_to_symbol = {tuple([None for _ in range(len)]): symbol}
+
+    def __str__(self):
+        ret_str = ""
+        for x in self.block_to_symbol:
+            ret_str += x + "\t" + str(self.block_to_symbol[x]) + "\n"
+        return ret_str
+
+    def __repr__(self):
+        ret_str = ""
+        for x in self.block_to_symbol:
+            ret_str += x + "\t" + str(self.block_to_symbol[x]) + "\n"
+        return ret_str
 
 
 def check_range_const(range_const: Range):
