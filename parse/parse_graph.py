@@ -6,9 +6,10 @@ import queue
 from graphviz import Digraph
 import warnings
 import z3
-from solver import meet, check_range_const
+from solver import meet
 from solver import Range, Array, Solver
 import sympy
+from utils import resolve_type
 
 
 class UnionSet:
@@ -81,6 +82,7 @@ class Graph:
 
         for node in self.graph_def.node:
             self.graph_backward[node.name] = []
+            self.edge_index[node.name] = []
             node_values = self.tf_graph.get_operation_by_name(node.name).values()
 
             if node_values is None or len(node_values) == 0:
@@ -89,7 +91,7 @@ class Graph:
                 self.node_output[node.name] = AbstractInterpretation(
                     size=[node_value.shape for node_value in node_values],
                     dtype=[node_value.dtype for node_value in node_values],
-                    array=[Array(sympy.symbols(node.name + ":" + str(i)), node_value.shape) for (i, node_value) in
+                    array=[Array(sympy.symbols(node.name + "|" + str(i)), node_value.shape) for (i, node_value) in
                            enumerate(node_values)])
             else:
                 self.node_output[node.name] = AbstractInterpretation(
@@ -106,14 +108,14 @@ class Graph:
 
                     in_tensor_names = [tensor.name for tensor in self.tf_graph.get_operation_by_name(
                         self.tensor_to_op[in_node_raw]).values()]
-                    self.edge_index[(in_node, node.name)] = None if len(
-                        in_tensor_names) == 1 else in_tensor_names.index(in_node_raw)
+                    self.edge_index[node.name].append(None if len(
+                        in_tensor_names) == 1 else in_tensor_names.index(in_node_raw))
                 else:  # if the input is defined by the operation's name
                     in_node = in_node_raw
 
                     in_tensor_names = [tensor.name for tensor in self.tf_graph.get_operation_by_name(
                         in_node_raw).values()]
-                    self.edge_index[(in_node, node.name)] = None if len(in_tensor_names) == 1 else 0
+                    self.edge_index[node.name].append(None if len(in_tensor_names) == 1 else 0)
 
                 if in_node not in self.graph_forward:
                     self.graph_forward[in_node] = []
@@ -163,8 +165,8 @@ class Graph:
             for node_name in nodes_in_main_clique:
                 flag = False
                 if node_name in self.graph_backward:
-                    for (in_node_name, _) in self.graph_backward[node_name]:
-                        if self.edge_index[(in_node_name, node_name)] is not None:
+                    for (i, (in_node_name, _)) in enumerate(self.graph_backward[node_name]):
+                        if self.edge_index[node_name][i] is not None:
                             flag = True
                             break
                 if flag:
@@ -225,7 +227,7 @@ class Graph:
             self.node_visited.add(son)
             parents_aps = []
             all_none = True
-            for (in_node_name, is_control) in self.graph_backward[son]:
+            for (i, (in_node_name, is_control)) in enumerate(self.graph_backward[son]):
                 if not is_control:
                     if in_node_name not in self.node_visited:
                         # there is a loop, and the node is "Merge"
@@ -234,7 +236,7 @@ class Graph:
                         self.node_output[in_node_name].value = Range(name="nextiteration",
                                                                      dtype=self.node_output[in_node_name].dtype)
 
-                    parents_aps.append(self.node_output[in_node_name].index_of(self.edge_index[(in_node_name, son)]))
+                    parents_aps.append(self.node_output[in_node_name].index_of(self.edge_index[son][i]))
                     all_none &= parents_aps[-1].has_none()
 
             temp = None
@@ -256,7 +258,9 @@ class Graph:
                 #     temp = None
                 try:
                     temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
-                except:
+                except AttributeError:
+                    pass
+                except AssertionError:
                     pass
 
             if isinstance(temp, tuple):
@@ -272,16 +276,31 @@ class Graph:
                 if isinstance(temp_array, list):
                     temp = []
                     for (i, tmp_array) in enumerate(temp_array):
-                        left, right = self.get_left_right(tmp_array.get_possible_values())
-                        temp.append(Range(name="array_ai", dtype=self.node_output[son].dtype[i]))
-                        temp_constraints += [Solver.min(temp[-1].left, left), Solver.max(temp[-1].right, right)]
+                        left, right = self.get_left_right(tmp_array.get_possible_values(), son)
+                        if left is None:
+                            temp.append(self.node_output[son].value[i])
+                        elif len(left) == 1:
+                            temp.append(Range(left=left[0], right=right[0]))
+                        elif len(left) == 2:
+                            temp.append(Range(left=z3.If(left[0] < left[1], left[0], left[1]),
+                                              right=z3.If(right[0] > right[1], right[0], right[1])))
+                        else:
+                            temp.append(Range(name="array_ai", dtype=self.node_output[son].dtype[i]))
+                            temp_constraints += [Solver.min(temp[-1].left, left), Solver.max(temp[-1].right, right)]
                 else:
-                    left, right = self.get_left_right(temp_array.get_possible_values())
-                    temp = Range(name="array_ai", dtype=self.node_output[son].dtype)
-                    temp_constraints += [Solver.min(temp.left, left), Solver.max(temp.right, right)]
+                    left, right = self.get_left_right(temp_array.get_possible_values(), son)
+                    if left is not None:
+                        if len(left) == 1:
+                            temp = Range(left=left[0], right=right[0])
+                        elif len(left) == 2:
+                            temp = Range(left=z3.If(left[0] < left[1], left[0], left[1]),
+                                         right=z3.If(right[0] > right[1], right[0], right[1]))
+                        else:
+                            temp = Range(name="array_ai", dtype=self.node_output[son].dtype)
+                            temp_constraints += [Solver.min(temp.left, left), Solver.max(temp.right, right)]
 
                 self.node_output[son].value = temp
-                self.node_output[son].constraints = z3.And(temp_constraints)
+                self.node_output[son].constraints = None if len(temp_constraints) == 0 else z3.And(temp_constraints)
 
             self.write(self.node_output[son])
 
@@ -298,27 +317,31 @@ class Graph:
         else:
             raise NotImplementedError
 
-    def get_left_right(self, linear_expressions):
+    def get_left_right(self, linear_expressions, name):
+        if len(linear_expressions) == 1 and len(linear_expressions[0]) == 0:
+            return [0], [0]
+        if len(linear_expressions) == 1 and linear_expressions[0][0] == 1 and linear_expressions[0][1] == name:
+            return None, None
         left = []
         right = []
         for linear_expression in linear_expressions:
             left_ele = None
             right_ele = None
             for (factor, name) in linear_expression:
-                if name.find(":") != -1:
-                    pos = name.find(':')
+                if name.find("|") != -1:
+                    pos = name.find('|')
                     index = int(name[pos + 1:])
                     name = name[:pos]
                 else:
                     index = None
 
-                value = self.node_output[name].index_of(index).value
+                value = self.node_output[name].index_of(index).value * factor
                 if left_ele is None:
-                    left_ele = value.left if isinstance(value, Range) else value
-                    right_ele = value.right if isinstance(value, Range) else value
+                    left_ele = value.left if isinstance(value, Range) else resolve_type(value)
+                    right_ele = value.right if isinstance(value, Range) else resolve_type(value)
                 else:
-                    left_ele += value.left if isinstance(value, Range) else value
-                    right_ele += value.right if isinstance(value, Range) else value
+                    left_ele = left_ele + (value.left if isinstance(value, Range) else resolve_type(value))
+                    right_ele = right_ele + (value.right if isinstance(value, Range) else resolve_type(value))
 
             left.append(left_ele)
             right.append(right_ele)

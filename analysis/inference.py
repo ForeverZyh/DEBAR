@@ -28,17 +28,12 @@ class InferValue:
         assert len(args) == 2
         if args[0].value is None or args[1].value is None:
             return None
-        if isinstance(args[0].value, Range) and isinstance(args[1].value, Range):
-            return Range(left=args[0].value.left + args[1].value.left,
-                         right=args[0].value.right + args[1].value.right)
-        elif not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
-            return args[0].value + args[1].value
+        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range):
+            x = InferValue.expanddims([args[0]], node)
+            y = InferValue.expanddims([args[1]], node)
+            return Range(left=x.left + y.left, right=x.right + y.right)
         else:
-            if not isinstance(args[0].value, Range):
-                args[0], args[1] = args[1], args[0]
-            temp = np.array(args[1].value)
-            return Range(left=args[0].value.left + resolve_type(np.min(temp)),
-                         right=args[0].value.right + resolve_type(np.max(temp)))
+            return args[0].value + args[1].value
 
     @staticmethod
     def addn(args: list, node):
@@ -493,24 +488,15 @@ class InferValue:
         assert len(args) == 2
         if args[0].value is None or args[1].value is None:
             return None
-        if isinstance(args[1].value, Range) and isinstance(args[0].value, Range):
+        if isinstance(args[1].value, Range) or isinstance(args[0].value, Range):
+            x = InferValue.expanddims([args[0]], node)
+            y = InferValue.expanddims([args[1]], node)
             value = Range(name="mul", dtype=args[0].dtype)
-            ends = [args[0].value.left * args[1].value.left, args[0].value.left * args[1].value.right,
-                    args[0].value.right * args[1].value.left, args[0].value.right * args[1].value.right]
+            ends = [x.left * y.left, x.left * y.right, x.right * y.left, x.right * y.right]
             return value, z3.And(Solver.min(value.left, ends),
                                  Solver.max(value.right, ends))
-        elif not isinstance(args[1].value, Range) and not isinstance(args[0].value, Range):
-            return args[0].value * args[1].value
         else:
-            if isinstance(args[1].value, Range):
-                args[0], args[1] = args[1], args[0]
-            left = resolve_type(np.min(args[1].value))
-            right = resolve_type(np.max(args[1].value))
-            value = Range(name="mul", dtype=args[0].dtype)
-            ends = [args[0].value.left * left, args[0].value.left * right,
-                    args[0].value.right * left, args[0].value.right * right]
-            return value, z3.And(Solver.min(value.left, ends),
-                                 Solver.max(value.right, ends))
+            return args[0].value * args[1].value
 
     @staticmethod
     def neg(args: list, node):
@@ -779,17 +765,12 @@ class InferValue:
     @staticmethod
     def sub(args: list, node):
         assert len(args) == 2
-        if isinstance(args[0].value, Range) and isinstance(args[1].value, Range):
-            return Range(left=args[0].value.left - args[1].value.right,
-                         right=args[0].value.right - args[1].value.left)
-        elif not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
-            return args[0].value - args[1].value
+        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range):
+            x = InferValue.expanddims([args[0]], node)
+            y = InferValue.expanddims([args[1]], node)
+            return Range(left=x.left - y.right, right=x.right - y.left)
         else:
-            if not isinstance(args[0].value, Range):
-                args[0], args[1] = args[1], args[0]
-            temp = np.array(args[1].value)
-            return Range(left=args[0].value.left - resolve_type(np.max(temp)),
-                         right=args[0].value.right - resolve_type(np.min(temp)))
+            return args[0].value - args[1].value
 
     @staticmethod
     def sum(args: list, node):
@@ -1089,27 +1070,39 @@ class InferArray:
 
     @staticmethod
     def concatv2(args: list, node):
-        assert len(args) > 2
-        ind = len(args[0].size)
+        assert len(args) > 1
         concat_ind = int(args[-1].value)
+        for i in range(1, len(args) - 1):
+            assert len(args[0].size) == len(args[i].size)
+            for j in range(len(args[i].size)):
+                if j != concat_ind:
+                    assert int(args[0].size[j]) == int(args[i].size[j])
+                else:
+                    try:
+                        int(args[0].size[j])
+                        int(args[i].size[j])
+                    except:
+                        return None
+
         ret = Array("tmp", args[0].size)
         ret.block_to_symbol = dict()
         index_slices = []
         for arg in args[:-1]:
             index_slices.append(copy.deepcopy(arg.array.index_slices))
-            index_slices[-1][concat_ind] = None
+            index_slices[-1][concat_ind] = [None]
 
-        ret.index_slices = Array.join_index_slices(index_slices[0], index_slices[1])
-        for i in range(2, len(args) - 1):
+        ret.index_slices = index_slices[0]
+        for i in range(1, len(args) - 1):
             ret.index_slices = Array.join_index_slices(ret.index_slices, index_slices[i])
         tmp_ret_index_slices = copy.deepcopy(ret.index_slices)
         ret.index_slices[concat_ind] = []
         split_point = 0
         for i in range(len(args) - 1):
-            tmp_ret_index_slices[concat_ind] = list(np.array(args[i].array.index_slices[concat_ind]) + split_point)
-            ret.index_slices[concat_ind] += tmp_ret_index_slices[concat_ind]
+            tmp_ret_index_slices[concat_ind] = args[i].array.index_slices[concat_ind]
+            ret.index_slices[concat_ind] += list(np.array(args[i].array.index_slices[concat_ind]) + split_point)
             tmp_keys = args[i].array.get_corresponding_keys(tmp_ret_index_slices)
-            split_point += int(args[i].size[concat_ind])
+            tmp_ret_index_slices[concat_ind] = list(np.array(args[i].array.index_slices[concat_ind]) + split_point)
+            split_point += int(args[i].array.index_slices[concat_ind][-1])
             i = 0
             for indexes in product(*tmp_ret_index_slices):
                 ret.block_to_symbol[tuple(indexes)] = tmp_keys[i]
@@ -1124,7 +1117,34 @@ class InferArray:
 
     @staticmethod
     def pack(args: list, node):
-        return InferArray.concatv2(args + [AbstractInterpretation(value=len(args[0].size) - 1)], node)
+        # return InferArray.concatv2(args + [AbstractInterpretation(value=len(args[0].size) - 1)], node)
+        assert len(args) >= 1
+        pack_ind = int(node.attr["axis"].i)
+        for i in range(1, len(args)):
+            assert len(args[0].size) == len(args[i].size)
+            for j in range(len(args[i].size)):
+                assert int(args[0].size[j]) == int(args[i].size[j])
+
+        ret = Array("tmp", args[0].size)
+        ret.block_to_symbol = dict()
+        index_slices = []
+        for arg in args:
+            index_slices.append(copy.deepcopy(arg.array.index_slices))
+        ret.index_slices = index_slices[0]
+        for i in range(1, len(args)):
+            ret.index_slices = Array.join_index_slices(ret.index_slices, index_slices[i])
+        tmp_ret_index_slices = copy.deepcopy(ret.index_slices)
+        ret.index_slices = ret.index_slices[:pack_ind] + [[]] + ret.index_slices[pack_ind:]
+
+        for i in range(len(args)):
+            ret.index_slices[pack_ind] += [i + 1]
+            tmp_keys = args[i].array.get_corresponding_keys(tmp_ret_index_slices)
+            i = 0
+            for indexes in product(*tmp_ret_index_slices):
+                ret.block_to_symbol[tuple(indexes)] = tmp_keys[i]
+                i += 1
+
+        return ret
 
     @staticmethod
     def sub(args: list, node):
@@ -1132,6 +1152,7 @@ class InferArray:
         ind = len(args[0].size)
         for i in range(ind):
             assert args[0].size[i] == args[1].size[i]
+
         ret = Array("tmp", args[0].size)
         ret.block_to_symbol = dict()
         ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
@@ -1151,7 +1172,7 @@ class InferArray:
         ret.index_slices = []
         ret.block_to_symbol = {}
         for x in np.array(args[1].value):
-            ret.index_slices += args[0].array.index_slices[x]
+            ret.index_slices.append(args[0].array.index_slices[x])
         for indexes in product(*args[0].array.index_slices):
             new_indexes = ()
             for x in np.array(args[1].value):
@@ -1170,13 +1191,39 @@ class InferArray:
         for i in range(int(args[0].size[axis])):
             rets.append(Array("tmp", args[0].size))
             rets[-1].index_slices = copy.deepcopy(args[0].array.index_slices)
-            rets[-1].index_slices[axis] = [1]
+            rets[-1].index_slices = rets[-1].index_slices[:axis] + rets[-1].index_slices[axis + 1:]
+            rets[-1].block_to_symbol = {}
 
             index_slices[axis] = [i]
             tmp_keys = args[0].array.get_corresponding_keys(index_slices)
             ii = 0
             for indexes in product(*index_slices):
-                rets[-1].block_to_symbol[tuple(indexes)] = tmp_keys[ii]
+                tmp_key = list(indexes)
+                tmp_key = tmp_key[:axis] + tmp_key[axis + 1:]
+                rets[-1].block_to_symbol[tuple(tmp_key)] = tmp_keys[ii]
                 ii += 1
 
-        return rets
+        return rets if len(rets) > 1 else rets[0]
+
+    @staticmethod
+    def split(args: list, node):
+        assert len(args) == 2
+        axis = int(args[0].value)
+        rets = []
+        index_slices = copy.deepcopy(args[1].array.index_slices)
+        for i in range(int(args[1].size[axis])):
+            rets.append(Array("tmp", args[1].size))
+            rets[-1].index_slices = copy.deepcopy(args[1].array.index_slices)
+            rets[-1].index_slices[axis] = [1]
+            rets[-1].block_to_symbol = {}
+
+            index_slices[axis] = [i]
+            tmp_keys = args[1].array.get_corresponding_keys(index_slices)
+            ii = 0
+            for indexes in product(*index_slices):
+                tmp_key = list(indexes)
+                tmp_key[axis] = 1
+                rets[-1].block_to_symbol[tuple(tmp_key)] = tmp_keys[ii]
+                ii += 1
+
+        return rets if len(rets) > 1 else rets[0]

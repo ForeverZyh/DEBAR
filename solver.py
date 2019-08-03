@@ -129,25 +129,40 @@ class Range:
 class Array:
     def __init__(self, symbol, size):
         self.index_slices = []
+        try:
+            len(size)
+        except:
+            self.index_slices = None
+            return
+
+        # try:
+        #     if len(size) == 1:
+        #         int(size[0])
+        # except:
+        #     self.index_slices = [None]
+        #     self.block_to_symbol = {(None,): symbol}
+        #     return
+        #
+        # if len(size) == 0 or (len(size) == 1 and int(size[0]) == 0):
+        #     self.index_slices = [[1]]
+        #     self.block_to_symbol = {(1,): symbol}
+        # else:
         for i in range(len(size)):
             try:
                 self.index_slices.append([int(size[i])])
             except:
-                self.index_slices.append(None)
-        self.block_to_symbol = {tuple([None if x is None else x[0] for x in self.index_slices]): symbol}
+                self.index_slices.append([None])
+        self.block_to_symbol = {tuple([x[0] for x in self.index_slices]): symbol}
 
     @staticmethod
     def join_index_slices(a, b):
         ret = []
         for i in range(len(a)):
-            if a[i] is None and b[i] is None:
-                ret.append(None)
-            elif a[i] is None:
-                ret.append(b[i])
-            elif b[i] is None:
-                ret.append(a[i])
+            if a[i][0] is None and b[i][0] is None:
+                ret.append([None])
             else:
-                c = np.unique(a + b)
+                assert a[i][0] is not None and b[i][0] is not None
+                c = np.unique(a[i] + b[i])
                 ret.append(list(c))
 
         return ret
@@ -188,13 +203,15 @@ class Array:
     def __str__(self):
         ret_str = ""
         for x in self.block_to_symbol:
-            ret_str += x + "\t" + str(self.block_to_symbol[x]) + "\n"
+            ret_str += str(x) + "\t" + str(self.block_to_symbol[x]) + "\n"
+        ret_str += str(self.index_slices) + "\n"
         return ret_str
 
     def __repr__(self):
         ret_str = ""
         for x in self.block_to_symbol:
-            ret_str += x + "\t" + str(self.block_to_symbol[x]) + "\n"
+            ret_str += str(x) + "\t" + str(self.block_to_symbol[x]) + "\n"
+        ret_str += str(self.index_slices) + "\n"
         return ret_str
 
 
