@@ -1075,14 +1075,13 @@ class InferArray:
         for i in range(1, len(args) - 1):
             assert len(args[0].size) == len(args[i].size)
             for j in range(len(args[i].size)):
+                try:
+                    int(args[0].size[j])
+                    int(args[i].size[j])
+                except:
+                    return None
                 if j != concat_ind:
                     assert int(args[0].size[j]) == int(args[i].size[j])
-                else:
-                    try:
-                        int(args[0].size[j])
-                        int(args[i].size[j])
-                    except:
-                        return None
 
         ret = Array("tmp", args[0].size)
         ret.block_to_symbol = dict()
@@ -1103,10 +1102,10 @@ class InferArray:
             tmp_keys = args[i].array.get_corresponding_keys(tmp_ret_index_slices)
             tmp_ret_index_slices[concat_ind] = list(np.array(args[i].array.index_slices[concat_ind]) + split_point)
             split_point += int(args[i].array.index_slices[concat_ind][-1])
-            i = 0
+            ii = 0
             for indexes in product(*tmp_ret_index_slices):
-                ret.block_to_symbol[tuple(indexes)] = tmp_keys[i]
-                i += 1
+                ret.block_to_symbol[tuple(indexes)] = tmp_keys[ii]
+                ii += 1
 
         return ret
 
@@ -1123,6 +1122,11 @@ class InferArray:
         for i in range(1, len(args)):
             assert len(args[0].size) == len(args[i].size)
             for j in range(len(args[i].size)):
+                try:
+                    int(args[0].size[j])
+                    int(args[i].size[j])
+                except:
+                    return None
                 assert int(args[0].size[j]) == int(args[i].size[j])
 
         ret = Array("tmp", args[0].size)
@@ -1139,10 +1143,12 @@ class InferArray:
         for i in range(len(args)):
             ret.index_slices[pack_ind] += [i + 1]
             tmp_keys = args[i].array.get_corresponding_keys(tmp_ret_index_slices)
-            i = 0
+            ii = 0
             for indexes in product(*tmp_ret_index_slices):
-                ret.block_to_symbol[tuple(indexes)] = tmp_keys[i]
-                i += 1
+                tmp_key = list(indexes)
+                tmp_key = tmp_key[:pack_ind] + [i + 1] + tmp_key[pack_ind:]
+                ret.block_to_symbol[tuple(tmp_key)] = tmp_keys[ii]
+                ii += 1
 
         return ret
 

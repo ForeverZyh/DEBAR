@@ -336,6 +336,10 @@ class Graph:
                     index = None
 
                 value = self.node_output[name].index_of(index).value * factor
+                if isinstance(value, Range):
+                    if factor < 0:
+                        value.left, value.right = value.right, value.left
+                    
                 if left_ele is None:
                     left_ele = value.left if isinstance(value, Range) else resolve_type(value)
                     right_ele = value.right if isinstance(value, Range) else resolve_type(value)
