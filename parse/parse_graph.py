@@ -258,6 +258,17 @@ class Graph:
                 #     temp = None
                 try:
                     temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
+                    flag = True
+                    if isinstance(self.node_output[son].dtype, list):
+                        for x in self.node_output[son].dtype:
+                            if int(x) == 10:
+                                flag = False
+                                break
+                    else:
+                        flag = int(self.node_output[son].dtype) != 10
+                    
+                    if not flag:        
+                        temp_array = None
                 except AttributeError:
                     pass
                 except AssertionError:
@@ -335,17 +346,17 @@ class Graph:
                 else:
                     index = None
 
-                value = self.node_output[name].index_of(index).value * factor
+                value = InferValue.expanddims([self.node_output[name].index_of(index)], self.node_by_name[name]) * factor
                 if isinstance(value, Range):
                     if factor < 0:
                         value.left, value.right = value.right, value.left
                     
                 if left_ele is None:
-                    left_ele = value.left if isinstance(value, Range) else resolve_type(value)
-                    right_ele = value.right if isinstance(value, Range) else resolve_type(value)
+                    left_ele = value.left
+                    right_ele = value.right
                 else:
-                    left_ele = left_ele + (value.left if isinstance(value, Range) else resolve_type(value))
-                    right_ele = right_ele + (value.right if isinstance(value, Range) else resolve_type(value))
+                    left_ele = left_ele + value.left
+                    right_ele = right_ele + value.right
 
             left.append(left_ele)
             right.append(right_ele)
