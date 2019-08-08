@@ -26,6 +26,10 @@ if __name__ == "__main__":
             suspected_nodes.append(node)
     print(suspected_nodes)
 
+    cnt_all = 0
+    cnt_sat = 0
+    cnt_unknown = 0
+    cnt_unsat = 0
     for suspected_node in suspected_nodes:
         # graph.draw(graph.backward_slice(suspected_node.name, set()), "real_interested")
         if suspected_node.op == "RealDiv":
@@ -102,8 +106,13 @@ if __name__ == "__main__":
         if is_sat:
             print(suspected_node.op, suspected_node.name)
             print("sat")
+            cnt_sat += 1
         elif has_unknown:
             print(suspected_node.op, suspected_node.name)
             print("unknown")
-#         else:
-#             print("unsat")
+            cnt_unknown += 1
+        else:
+            #print("unsat")
+            cnt_unsat += 1
+        cnt_all += 1
+    print("all: ", cnt_all, "sat: ", cnt_sat, "unsat: ", cnt_unsat, "unknown: ", cnt_unknown)
