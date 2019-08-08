@@ -287,6 +287,9 @@ class Graph:
                 if isinstance(temp_array, list):
                     temp = []
                     for (i, tmp_array) in enumerate(temp_array):
+                        if temp_array[i].index_slices is None:
+                            temp.append(self.node_output[son].value[i])
+                            continue
                         left, right = self.get_left_right(tmp_array.get_possible_values(), son)
                         if left is None:
                             temp.append(self.node_output[son].value[i])
@@ -298,7 +301,7 @@ class Graph:
                         else:
                             temp.append(Range(name="array_ai", dtype=self.node_output[son].dtype[i]))
                             temp_constraints += [Solver.min(temp[-1].left, left), Solver.max(temp[-1].right, right)]
-                else:
+                elif temp_array.index_slices is not None:
                     left, right = self.get_left_right(temp_array.get_possible_values(), son)
                     if left is not None:
                         if len(left) == 1:

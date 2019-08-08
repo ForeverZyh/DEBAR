@@ -71,13 +71,13 @@ class Solver:
                 if math.isinf(interval[1]):
                     return z3.And(interval[0] < x)
                 else:
-                    return z3.And(interval[0] < x, x <= interval[1])
+                    return z3.And(interval[0] <= x, x <= interval[1])
             else:
                 # [a, b)
                 if math.isinf(interval[0]):
                     return z3.And(x < interval[1])
                 else:
-                    return z3.And(interval[0] <= x, x < interval[1])
+                    return z3.And(interval[0] <= x, x <= interval[1])
         else:
             return x == interval
 
@@ -129,6 +129,7 @@ class Range:
 class Array:
     def __init__(self, symbol, size):
         self.index_slices = []
+        self.block_to_symbol = {}
         try:
             len(size)
         except:

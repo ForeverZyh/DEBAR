@@ -63,7 +63,7 @@ if __name__ == "__main__":
             additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
                                                                        suspected_node_input)
         elif suspected_node.op == "Rsqrt":
-            suspected_node_input = Range(left=-UNDERFLOW_LIMIT, right=UNDERFLOW_LIMIT, const_type=0)
+            suspected_node_input = Range(left=None, right=UNDERFLOW_LIMIT, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
             additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
                                                                        suspected_node_input)
