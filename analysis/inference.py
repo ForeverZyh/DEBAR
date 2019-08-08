@@ -783,7 +783,12 @@ class InferValue:
                 return Range(left=args[0].value.left * ind, right=args[0].value.right * ind)
             except:
                 ind = Range(name="sum_ind", dtype=3)
-                return InferValue.mul([args[0], AbstractInterpretation(value=ind, dtype=3, size=[])], node)
+                ind.left = 0
+                t = InferValue.mul([args[0], AbstractInterpretation(value=ind, dtype=3, size=[])], node)
+                if isinstance(t, tuple):
+                    return t[0], z3.And(t[1], ind.right >= 0)
+                else:
+                    return t, ind.right >= ind.left
         else:
             return np.sum(args[0].value, axis=args[1].value)
 
@@ -911,8 +916,8 @@ class InferValue:
     @staticmethod
     def log(args: list, node):
         assert len(args) == 1
-        stride = 5
-        intervals = [(0.0, math.pow(10, UNDERFLOW_D))] + \
+        stride = 15
+        intervals = [(0, math.pow(10, UNDERFLOW_D))] + \
                     [(math.pow(10, i), math.pow(10, i + stride)) for i in range(UNDERFLOW_D, OVERFLOW_D, stride)] + \
                     [(math.pow(10, OVERFLOW_D), math.inf)]
         if isinstance(args[0].value, Range):
@@ -1052,6 +1057,10 @@ class InferValue:
 class InferArray:
     @staticmethod
     def add(args: list, node):
+        try:
+            len(args[0].size) == len(args[1].size)
+        except:
+            return None
         assert len(args) == 2 and len(args[0].size) == len(args[1].size)
         ind = len(args[0].size)
         for i in range(ind):
@@ -1120,6 +1129,10 @@ class InferArray:
         assert len(args) >= 1
         pack_ind = int(node.attr["axis"].i)
         for i in range(1, len(args)):
+            try:
+                len(args[0].size) == len(args[i].size)
+            except:
+                return None
             assert len(args[0].size) == len(args[i].size)
             for j in range(len(args[i].size)):
                 try:
@@ -1154,6 +1167,10 @@ class InferArray:
 
     @staticmethod
     def sub(args: list, node):
+        try:
+            len(args[0].size) == len(args[1].size)
+        except:
+            return None
         assert len(args) == 2 and len(args[0].size) == len(args[1].size)
         ind = len(args[0].size)
         for i in range(ind):
