@@ -1174,6 +1174,7 @@ class InferArray:
     @staticmethod
     def transpose(args: list, node):
         assert len(args) == 2
+        assert not isinstance(args[1].value, Range)
         ret = Array("tmp", args[0].size)
         ret.index_slices = []
         ret.block_to_symbol = {}
