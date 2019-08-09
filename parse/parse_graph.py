@@ -216,6 +216,20 @@ class Graph:
                 print("----------Gradients are not interested----------")
                 return None
             nodes_interested.append(appended.name)
+            
+        pre_check = True
+        for son in nodes_interested[:-1]:
+            u = self.node_by_name[son]
+            try:
+                getattr(InferValue, u.op.lower())([], u)
+            except AttributeError:
+                print(u.op)
+                pre_check = False
+            except:
+                pass
+        
+        if not pre_check:
+            raise AttributeError
 
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]

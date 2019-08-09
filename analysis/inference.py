@@ -72,7 +72,8 @@ class InferValue:
         try:
             return Range(left=0, right=int(args[0].size[int(args[1].value)]) - 1)
         except:
-            return Range(left=0, right=Solver.add_variable("argmax_R", 3))
+            value = Range(left=0, right=Solver.add_variable("argmax_R", 3))
+            return value, value.left <= value.right
 
     @staticmethod
     def assign(args: list, node):
@@ -81,6 +82,13 @@ class InferValue:
             return args[1].value
         else:
             return args[0].value
+        
+    def assignadd(args: list, node):
+        k = Solver.add_variable("assignadd", 3)
+        y = InferValue.expanddims([args[1]], node)
+        args[0].value.left = k * y.left
+        args[0].value.right = k * y.right
+        return args[0].value, k > 0
 
     @staticmethod
     def avgpool(args: list, node):
@@ -133,6 +141,8 @@ class InferValue:
                          right=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False,
                                      z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
         elif int(attrs['SrcT'].type) in [9] and int(attrs['DstT'].type) in [3]:
+            return args[0].value
+        elif int(attrs['SrcT'].type) in [3] and int(attrs['DstT'].type) in [9]:
             return args[0].value
         elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [3]:
             return InferValue.floor(args, node)
@@ -243,30 +253,21 @@ class InferValue:
         epsilon = float(node.attr['epsilon'].f)
         is_training = node.attr["is_training"].b
 
-        x = args[0].value
-        mean = args[1].value
-        variance = args[2].value
+        x = InferValue.expanddims([args[0]], node)
+        mean = InferValue.expanddims([args[1]], node)
+        variance = InferValue.expanddims([args[2]], node)
         offset = args[3].value
         scale = args[4].value + epsilon
 
         if not is_training:
-            if isinstance(scale, Range) and isinstance(variance, Range):
-                ends_scale_variance = [scale.left / variance.left, scale.right / variance.left,
-                                       scale.left / variance.right,
-                                       scale.right / variance.right]
-            elif isinstance(variance, Range):
-                ends_scale_variance = [float(scale) / variance.left, float(scale) / variance.right]
-            elif isinstance(scale, Range):
-                ends_scale_variance = [scale.left / float(variance), scale.right / float(variance)]
-            else:
-                ends_scale_variance = [float(scale) / float(variance)]
+            offset = InferValue.expanddims([args[3]], node)
+            scale = InferValue.expanddims([AbstractInterpretation(value=args[4].value + epsilon)], node)
+            ends_scale_variance = [scale.left / variance.left, scale.right / variance.left,
+                                   scale.left / variance.right,
+                                   scale.right / variance.right]
 
-            if isinstance(mean, Range):
-                ends = [(x.left - mean.right) * end for end in ends_scale_variance] + [
-                    (x.right - mean.left) * end for end in ends_scale_variance]
-            else:
-                ends = [(x.left - float(mean)) * end for end in ends_scale_variance] + [
-                    (x.right - float(mean)) * end for end in ends_scale_variance]
+            ends = [(x.left - mean.right) * end for end in ends_scale_variance] + [
+                (x.right - mean.left) * end for end in ends_scale_variance]
 
             value = Range(name="fusedbatchnorm", dtype=1)
             return [Range(left=value.left + offset.left, right=value.right + offset.right),
@@ -274,17 +275,10 @@ class InferValue:
                     Range(name="fusedbatchnorm_rs1", dtype=1), Range(name="fusedbatchnorm_rs2", dtype=1)], z3.And(
                 Solver.min(value.left, ends), Solver.max(value.right, ends))
         else:
-            if isinstance(variance, Range):
-                ends_scale_variance = [1 / variance.left, 1 / variance.right]
-            else:
-                ends_scale_variance = [float(variance)]
+            ends_scale_variance = [1 / variance.left, 1 / variance.right]
 
-            if isinstance(mean, Range):
-                ends = [(x.left - mean.right) * end for end in ends_scale_variance] + [
-                    (x.right - mean.left) * end for end in ends_scale_variance]
-            else:
-                ends = [(x.left - float(mean)) * end for end in ends_scale_variance] + [
-                    (x.right - float(mean)) * end for end in ends_scale_variance]
+            ends = [(x.left - mean.right) * end for end in ends_scale_variance] + [
+                (x.right - mean.left) * end for end in ends_scale_variance]
 
             value = Range(name="fusedbatchnorm", dtype=1)
             return [value,
@@ -396,6 +390,13 @@ class InferValue:
                        args[1].value.left)
         return Range(left=z3.If(cond1, False, z3.If(cond2, True, True)),
                      right=z3.If(cond1, True, z3.If(cond2, False, True)))
+    
+    @staticmethod
+    def loguniformcandidatesampler(args: list, node):
+        assert len(args) == 1
+        ind = int(node.attr["range_max"].i)
+        num = int(node.attr["num_sampled"].i)
+        return [Range(left=0,right=ind - 1), Range(left=UNDERFLOW_LIMIT*10,right=num), Range(left=UNDERFLOW_LIMIT*10,right=num)]
 
     @staticmethod
     def loopcond(args: list, node):
@@ -513,7 +514,16 @@ class InferValue:
             ind = int(args[1].size[0])
             return Range(left=0, right=ind - 1)
         except:
-            return Range(left=0, right=Solver.add_variable("nonmaxsuppressionv3_R", 3))
+            value = Range(left=0, right=Solver.add_variable("nonmaxsuppressionv3_R", 3))
+            return value, value.left <= value.right
+        
+    @staticmethod
+    def notequal(args: list, node):
+        if not turn_on_bool:
+            return Range(left=True, right=True)
+        else:
+            warnings.warn("floormod not implemented", RuntimeWarning)
+            return Range(left=True, right=True)
 
     @staticmethod
     def onehot(args: list, node):
@@ -578,7 +588,7 @@ class InferValue:
     def randomuniform(args: list, node):
         assert len(args) == 1
         value = Range(name="randomuniform", dtype=1)
-        return value, value.left <= value.right
+        return Range(left=UNDERFLOW_LIMIT * 10, right=1)
 
     @staticmethod
     def range(args: list, node):
@@ -586,6 +596,15 @@ class InferValue:
         left = args[0].value.left if isinstance(args[0].value, Range) else int(args[0].value)
         right = args[1].value.right if isinstance(args[1].value, Range) else int(args[1].value)
         return Range(left=left, right=right)
+    
+    @staticmethod
+    def rank(args: list, node):
+        assert len(args) == 1
+        try:
+            return int(args[0].size)
+        except:
+            value = Range(left=1, right=Solver.add_variable("rank3_R", 3))
+            return value, value.left <= value.right
 
     @staticmethod
     def readvariableop(args: list, node):
@@ -687,7 +706,7 @@ class InferValue:
             return [int(x) for x in args[0].size]
         except:
             value = Range(left=0, right=Solver.add_variable("shape_R", 3))
-            return value
+            return value, value.left < value.right
 
     @staticmethod
     def size(args: list, node):
@@ -697,11 +716,13 @@ class InferValue:
             for x in args[0].size:
                 ele *= int(x)
             if ele < 0:
-                return Range(left=0, right=Solver.add_variable("shape_R", 3))
+                value = Range(left=0, right=Solver.add_variable("size_R", 3))
+                return value, value.left < value.right
             else:
                 return ele
         except:
-            return Range(left=0, right=Solver.add_variable("shape_R", 3))
+            value = Range(left=0, right=Solver.add_variable("size_R", 3))
+            return value, value.left < value.right
 
     @staticmethod
     def slice(args: list, node):
@@ -1080,6 +1101,8 @@ class InferArray:
     @staticmethod
     def concatv2(args: list, node):
         assert len(args) > 1
+        if len(args) - 1 > 10:
+            return None
         concat_ind = int(args[-1].value)
         for i in range(1, len(args) - 1):
             assert len(args[0].size) == len(args[i].size)
@@ -1127,6 +1150,8 @@ class InferArray:
     def pack(args: list, node):
         # return InferArray.concatv2(args + [AbstractInterpretation(value=len(args[0].size) - 1)], node)
         assert len(args) >= 1
+        if len(args) > 10:
+            return None
         pack_ind = int(node.attr["axis"].i)
         for i in range(1, len(args)):
             try:
@@ -1212,6 +1237,12 @@ class InferArray:
         axis = int(node.attr["axis"].i)
         rets = []
         index_slices = copy.deepcopy(args[0].array.index_slices)
+        try:
+            if int(args[0].size[axis]) > 10:
+                return None
+        except:
+            return None
+        
         for i in range(int(args[0].size[axis])):
             rets.append(Array("tmp", args[0].size))
             rets[-1].index_slices = copy.deepcopy(args[0].array.index_slices)
@@ -1235,6 +1266,12 @@ class InferArray:
         axis = int(args[0].value)
         rets = []
         index_slices = copy.deepcopy(args[1].array.index_slices)
+        try:
+            if int(args[1].size[axis]) > 10:
+                return None
+        except:
+            return None
+        
         for i in range(int(args[1].size[axis])):
             rets.append(Array("tmp", args[1].size))
             rets[-1].index_slices = copy.deepcopy(args[1].array.index_slices)
