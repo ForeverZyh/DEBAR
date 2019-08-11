@@ -4,7 +4,8 @@ from tensorflow.python.framework import tensor_util
 from solver import Range
 import ast
 import numpy as np
-
+import z3
+placeholder_map = {}
 
 def const(node):
     attrs = node.attr
@@ -32,6 +33,8 @@ def variablev2(node):
 
 
 def oneshotiterator(node):
+    if node.name in placeholder_map:
+        return placeholder_map[node.name]
     attrs = node.attr
     dtypes = attrs["output_types"].list.type
     value = []
@@ -51,6 +54,7 @@ def oneshotiterator(node):
         else:
             break
 
+    constraints = []
     for (i, rng) in enumerate(input_list):
         if None in rng:
             value.append(Range(name="oneshotiterator", dtype=dtypes[i]))
@@ -58,13 +62,17 @@ def oneshotiterator(node):
                 value[-1].left = rng[0]
             if rng[1] is not None:
                 value[-1].right = rng[1]
+            constraints.append(value[-1].left <= value[-1].right)
         else:
             value.append(Range(left=rng[0], right=rng[1]))
-
-    return value
+    
+    placeholder_map[node.name] = value, z3.And(constraints)
+    return placeholder_map[node.name]
 
 
 def placeholder(node):
+    if node.name in placeholder_map:
+        return placeholder_map[node.name]
     attrs = node.attr
     dtype = attrs["dtype"].type
     print(node)
@@ -86,6 +94,8 @@ def placeholder(node):
             value.left = rng[0]
         if rng[1] is not None:
             value.right = rng[1]
-        return value
+        placeholder_map[node.name] = value, value.left <= value.right
     else:
-        return Range(left=rng[0], right=rng[1])
+        placeholder_map[node.name] = Range(left=rng[0], right=rng[1])
+    
+    return placeholder_map[node.name]

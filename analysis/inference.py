@@ -148,6 +148,11 @@ class InferValue:
             return InferValue.floor(args, node)
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
+    
+    @staticmethod
+    def checknumerics(args: list, node):
+        assert len(args) == 1
+        return args[0].value
 
     @staticmethod
     def clipbyvalue(args: list, node):
@@ -705,8 +710,8 @@ class InferValue:
         try:
             return [int(x) for x in args[0].size]
         except:
-            value = Range(left=0, right=Solver.add_variable("shape_R", 3))
-            return value, value.left < value.right
+            value = Range(left=1, right=Solver.add_variable("shape_R", 3))
+            return value, value.left <= value.right
 
     @staticmethod
     def size(args: list, node):
@@ -759,6 +764,19 @@ class InferValue:
             return Range(left=left, right=right), z3.And(cons)
         else:
             return np.sqrt(args[0].value)
+        
+    @staticmethod
+    def square(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            left_sq = args[0].value.left * args[0].value.left
+            right_sq = args[0].value.right * args[0].value.right
+            min_sq = z3.If(left_sq < right_sq, left_sq, right_sq)
+            max_sq = z3.If(left_sq > right_sq, left_sq, right_sq)
+            cond = z3.And(args[0].value.left <= 0, args[0].value.right >=0)
+            return Range(left=z3.If(cond, 0, min_sq), right=max_sq)
+        else:
+            return args[0].value * args[0].value
 
     @staticmethod
     def squareddifference(args: list, node):

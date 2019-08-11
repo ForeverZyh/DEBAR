@@ -223,8 +223,9 @@ class Graph:
             try:
                 getattr(InferValue, u.op.lower())([], u)
             except AttributeError:
-                print(u.op)
-                pre_check = False
+                if u.op.lower() not in ["assert", "nextiteration"]:
+                    print(u.op)
+                    pre_check = False
             except:
                 pass
         
@@ -379,6 +380,18 @@ class Graph:
             right.append(right_ele)
 
         return left, right
+    
+    def get_info(self):
+        variable_cnt = 0
+        for op in self.node_by_name:
+            if self.node_by_name[op].op.lower() in ["variablev2", "variable", "varhandleop"]:
+                u = self.node_output[op].size
+                tmp = 1
+                for x in u:
+                    tmp *= int(x)
+                variable_cnt += tmp
+                
+        return len(self.nodes_in_main_clique_topology), variable_cnt
 
 
 def main():

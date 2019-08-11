@@ -4,7 +4,7 @@ from solver import Range
 from utils import OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 import math
 import sys
-
+sys.setrecursionlimit(100000)
 try:
     assert len(sys.argv) == 2
     pbtxt = sys.argv[1]
@@ -24,7 +24,7 @@ if __name__ == "__main__":
     for node in graph.graph_def.node:
         if node.op in rule and graph.f.find(node.name) == graph.main_clique:
             suspected_nodes.append(node)
-    print(suspected_nodes)
+    print(graph.get_info())
 
     cnt_all = 0
     cnt_sat = 0
@@ -116,3 +116,4 @@ if __name__ == "__main__":
             cnt_unsat += 1
         cnt_all += 1
     print("all: ", cnt_all, "sat: ", cnt_sat, "unsat: ", cnt_unsat, "unknown: ", cnt_unknown)
+    print(graph.get_info())
