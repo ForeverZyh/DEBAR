@@ -10,7 +10,7 @@ from solver import meet
 from solver import Range, Array, Solver
 import sympy
 from utils import resolve_type
-
+turn_on_array = False
 
 class UnionSet:
     def __init__(self, eles):
@@ -271,23 +271,24 @@ class Graph:
                 # except:
                 #     warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
                 #     temp = None
-                try:
-                    temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
-                    flag = True
-                    if isinstance(self.node_output[son].dtype, list):
-                        for x in self.node_output[son].dtype:
-                            if int(x) == 10:
-                                flag = False
-                                break
-                    else:
-                        flag = int(self.node_output[son].dtype) != 10
-                    
-                    if not flag:        
-                        temp_array = None
-                except AttributeError:
-                    pass
-                except AssertionError:
-                    pass
+                if turn_on_array:
+                    try:
+                        temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
+                        flag = True
+                        if isinstance(self.node_output[son].dtype, list):
+                            for x in self.node_output[son].dtype:
+                                if int(x) == 10:
+                                    flag = False
+                                    break
+                        else:
+                            flag = int(self.node_output[son].dtype) != 10
+
+                        if not flag:        
+                            temp_array = None
+                    except AttributeError:
+                        pass
+                    except AssertionError:
+                        pass
 
             if isinstance(temp, tuple):
                 self.node_output[son].value = temp[0]

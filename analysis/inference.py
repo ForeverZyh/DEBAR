@@ -533,10 +533,11 @@ class InferValue:
     @staticmethod
     def onehot(args: list, node):
         assert len(args) == 4
-        value = Range(name="onehot", dtype=args[2].dtype)
-        constraint = z3.And(Solver.min(value.left, [args[2].value, args[3].value]),
-                            Solver.max(value.left, [args[2].value, args[3].value]))
-        return value, constraint
+#         value = Range(name="onehot", dtype=args[2].dtype)
+#         constraint = z3.And(Solver.min(value.left, [args[2].value, args[3].value]),
+#                             Solver.max(value.left, [args[2].value, args[3].value]))
+#         return value, constraint
+        return Range(left=float(min(args[2].value, args[3].value)), right=float(max(args[2].value, args[3].value)))
 
     @staticmethod
     def oneshotiterator(args: list, node):
