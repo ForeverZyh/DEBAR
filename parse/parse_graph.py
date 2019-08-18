@@ -216,7 +216,7 @@ class Graph:
                 print("----------Gradients are not interested----------")
                 return None
             nodes_interested.append(appended.name)
-            
+
         pre_check = True
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
@@ -228,7 +228,7 @@ class Graph:
                     pre_check = False
             except:
                 pass
-        
+
         if not pre_check:
             raise AttributeError
 
@@ -261,6 +261,8 @@ class Graph:
             else:
                 try:
                     temp = getattr(InferValue, u.op.lower())(parents_aps, u)
+                    if temp is not None and isinstance(temp, tuple):
+                        raise AssertionError
                 except AttributeError:
                     if u.op.lower() in ["assert"]:
                         pass
@@ -281,8 +283,8 @@ class Graph:
                                 break
                     else:
                         flag = int(self.node_output[son].dtype) != 10
-                    
-                    if not flag:        
+
+                    if not flag:
                         temp_array = None
                 except AttributeError:
                     pass
@@ -297,8 +299,6 @@ class Graph:
 
             if temp_array is not None:
                 self.node_output[son].array = temp_array
-                temp_constraints = [] if self.node_output[son].constraints is None else [
-                    self.node_output[son].constraints]
                 if isinstance(temp_array, list):
                     temp = []
                     for (i, tmp_array) in enumerate(temp_array):
@@ -308,28 +308,15 @@ class Graph:
                         left, right = self.get_left_right(tmp_array.get_possible_values(), son)
                         if left is None:
                             temp.append(self.node_output[son].value[i])
-                        elif len(left) == 1:
-                            temp.append(Range(left=left[0], right=right[0]))
-                        elif len(left) == 2:
-                            temp.append(Range(left=z3.If(left[0] < left[1], left[0], left[1]),
-                                              right=z3.If(right[0] > right[1], right[0], right[1])))
                         else:
-                            temp.append(Range(name="array_ai", dtype=self.node_output[son].dtype[i]))
-                            temp_constraints += [Solver.min(temp[-1].left, left), Solver.max(temp[-1].right, right)]
+                            temp.append(Range(left=min(left), right=max(right)))
                 elif temp_array.index_slices is not None:
                     left, right = self.get_left_right(temp_array.get_possible_values(), son)
                     if left is not None:
-                        if len(left) == 1:
-                            temp = Range(left=left[0], right=right[0])
-                        elif len(left) == 2:
-                            temp = Range(left=z3.If(left[0] < left[1], left[0], left[1]),
-                                         right=z3.If(right[0] > right[1], right[0], right[1]))
-                        else:
-                            temp = Range(name="array_ai", dtype=self.node_output[son].dtype)
-                            temp_constraints += [Solver.min(temp.left, left), Solver.max(temp.right, right)]
+                        temp = Range(left=min(left), right=max(right))
 
                 self.node_output[son].value = temp
-                self.node_output[son].constraints = None if len(temp_constraints) == 0 else z3.And(temp_constraints)
+                self.node_output[son].constraints = None
 
             self.write(self.node_output[son])
 
@@ -364,11 +351,12 @@ class Graph:
                 else:
                     index = None
 
-                value = InferValue.expanddims([self.node_output[name].index_of(index)], self.node_by_name[name]) * factor
+                value = InferValue.expanddims([self.node_output[name].index_of(index)],
+                                              self.node_by_name[name]) * factor
                 if isinstance(value, Range):
                     if factor < 0:
                         value.left, value.right = value.right, value.left
-                    
+
                 if left_ele is None:
                     left_ele = value.left
                     right_ele = value.right
@@ -380,7 +368,7 @@ class Graph:
             right.append(right_ele)
 
         return left, right
-    
+
     def get_info(self):
         variable_cnt = 0
         for op in self.node_by_name:
@@ -401,7 +389,7 @@ class Graph:
                 for x in u:
                     tmp *= int(x)
                 variable_cnt += tmp
-                
+
         return len(self.nodes_in_main_clique_topology), variable_cnt
 
 

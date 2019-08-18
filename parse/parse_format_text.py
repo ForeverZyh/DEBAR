@@ -5,7 +5,10 @@ from solver import Range
 import ast
 import numpy as np
 import z3
+from utils import *
+
 placeholder_map = {}
+
 
 def const(node):
     attrs = node.attr
@@ -29,7 +32,8 @@ def variablev2(node):
     if dtype in [1]:
         return Range(left=-1, right=1)
     else:
-        return Range(name="variablev2", dtype=dtype)
+        print(node.name + " unknwon!")
+        return Range(left=1, right=100)
 
 
 def oneshotiterator(node):
@@ -50,23 +54,19 @@ def oneshotiterator(node):
         if not isinstance(input_list, list):
             print("Input string is not a list!")
         elif np.array(input_list).shape != (len(dtypes), 2):
-            print("Input list's shape not match with %s (received %s)!" % (str((len(dtypes), 2)), str(np.array(input_list))))
+            print("Input list's shape not match with %s (received %s)!" % (
+                str((len(dtypes), 2)), str(np.array(input_list))))
         else:
             break
 
-    constraints = []
     for (i, rng) in enumerate(input_list):
         if None in rng:
-            value.append(Range(name="oneshotiterator", dtype=dtypes[i]))
-            if rng[0] is not None:
-                value[-1].left = rng[0]
-            if rng[1] is not None:
-                value[-1].right = rng[1]
-            constraints.append(value[-1].left <= value[-1].right)
+            value.append(Range(left=rng[0] if rng[0] is not None else -OVERFLOW_LIMIT,
+                               right=rng[1] if rng[1] is not None else OVERFLOW_LIMIT))
         else:
             value.append(Range(left=rng[0], right=rng[1]))
-    
-    placeholder_map[node.name] = value, z3.And(constraints)
+
+    placeholder_map[node.name] = value
     return placeholder_map[node.name]
 
 
@@ -84,18 +84,14 @@ def placeholder(node):
             rng = ast.literal_eval(x)
         except:
             rng = None
-        
+
         if isinstance(rng, list) and len(rng) == 2:
             break
 
     if None in rng:
-        value = Range(name="oneshotiterator", dtype=dtype)
-        if rng[0] is not None:
-            value.left = rng[0]
-        if rng[1] is not None:
-            value.right = rng[1]
-        placeholder_map[node.name] = value, value.left <= value.right
+        placeholder_map[node.name] = Range(left=rng[0] if rng[0] is not None else -OVERFLOW_LIMIT,
+                                           right=rng[1] if rng[1] is not None else OVERFLOW_LIMIT)
     else:
         placeholder_map[node.name] = Range(left=rng[0], right=rng[1])
-    
+
     return placeholder_map[node.name]
