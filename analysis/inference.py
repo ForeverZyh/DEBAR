@@ -631,15 +631,14 @@ class InferValue:
         if isinstance(x, Range) and isinstance(y, Range):
             ends = [x.left / y.left, x.left / y.right, x.right / y.left, x.right / y.right]
             value = Range(name="realdiv", dtype=args[0].dtype)
-            return value, z3.And(Solver.min(value.left, ends),
-                                 Solver.max(value.right, ends))
+            cond = z3.Or(value.left>0,value.right<0)
+            return Range(left=z3.If(cond, value.left, -OVERFLOW_LIMIT), right=z3.If(cond, value.right, OVERFLOW_LIMIT)), z3.And(Solver.min(value.left, ends), Solver.max(value.right, ends))
         elif not isinstance(y, Range):
             return x * (1 / y)
         else:
             ends = [x / y.left, x / y.right]
-            value = Range(name="realdiv", dtype=args[0].dtype)
-            return value, z3.And(Solver.min(value.left, ends),
-                                 Solver.max(value.right, ends))
+            cond = z3.Or(value.left>0,value.right<0)
+            return Range(left=z3.If(cond, value.left, -OVERFLOW_LIMIT), right=z3.If(cond, value.right, OVERFLOW_LIMIT)), z3.And(Solver.min(value.left, ends), Solver.max(value.right, ends))
 
     @staticmethod
     def relu(args: list, node):
