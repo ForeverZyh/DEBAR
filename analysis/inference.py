@@ -186,9 +186,9 @@ class InferValue:
         assert len(args) == 3
         if isinstance(args[0].value, Range):
             return Range(left=max(args[0].value.left,
-                                  args[1].value if not isinstance(args[1].value, Range) else args[1].value.left),
+                                  float(args[1].value) if not isinstance(args[1].value, Range) else args[1].value.left),
                          right=min(args[0].value.right,
-                                   args[2].value if not isinstance(args[2].value, Range) else args[2].value.right))
+                                   float(args[2].value) if not isinstance(args[2].value, Range) else args[2].value.right))
         else:
             return min(max(args[0].value, args[1].value), args[2].value)
 
