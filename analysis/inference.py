@@ -105,10 +105,14 @@ class InferValue:
             args[0].value.left = 0
         elif y.left < 0:
             args[0].value.left = -OVERFLOW_LIMIT
+        else:
+            args[0].value.left = y.left
         if y.right == 0:
             args[0].value.right = 0
         elif y.right > 0:
             args[0].value.right = OVERFLOW_LIMIT
+        else:
+            args[0].value.right = y.right
         return args[0].value
 
     @staticmethod
