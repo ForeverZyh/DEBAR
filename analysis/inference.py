@@ -821,13 +821,9 @@ class InferValue:
                 ind = int(args[0].size[int(args[1].value)])
                 return Range(left=args[0].value.left * ind, right=args[0].value.right * ind)
             except:
-                ind = Range(name="sum_ind", dtype=3)
-                ind.left = 0
+                ind = Range(left=1, right=OVERFLOW_LIMIT)
                 t = InferValue.mul([args[0], AbstractInterpretation(value=ind, dtype=3, size=[])], node)
-                if isinstance(t, tuple):
-                    return t[0], z3.And(t[1], ind.right >= 0)
-                else:
-                    return t, ind.right >= ind.left
+                return t
         else:
             return np.sum(args[0].value, axis=args[1].value)
 
