@@ -386,6 +386,17 @@ class Graph:
         for op in self.node_by_name:
             if self.node_by_name[op].op.lower() in ["variablev2", "variable", "varhandleop"]:
                 u = self.node_output[op].size
+                if self.node_by_name[op].op.lower() == "varhandleop":
+                    s = str(self.node_by_name[op].attr["shape"].shape)
+                    x = 0
+                    u = []
+                    for i in range(len(s)):
+                        if s[i] >= '0' and s[i] <= '9':
+                            x = x * 10 + ord(s[i]) - 48
+                        elif x != 0:
+                            u.append(x)
+                            x = 0
+
                 tmp = 1
                 for x in u:
                     tmp *= int(x)
