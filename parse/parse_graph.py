@@ -6,10 +6,12 @@ import queue
 from graphviz import Digraph
 import warnings
 import z3
-from solver import meet
+from solver import meet, meet_relation_variable
 from solver import Range, Array, Solver
-import sympy
-from utils import resolve_type
+from utils import *
+import numpy as np
+
+turn_on_array = True
 
 
 class UnionSet:
@@ -91,12 +93,12 @@ class Graph:
                 self.node_output[node.name] = AbstractInterpretation(
                     size=[node_value.shape for node_value in node_values],
                     dtype=[node_value.dtype for node_value in node_values],
-                    array=[Array(sympy.symbols(node.name + "|" + str(i)), node_value.shape) for (i, node_value) in
-                           enumerate(node_values)])
+                    array=[Array(node.name + "|" + str(i), node_value.shape) for
+                           (i, node_value) in enumerate(node_values)])
             else:
                 self.node_output[node.name] = AbstractInterpretation(
                     size=node_values[0].shape, dtype=node_values[0].dtype,
-                    array=Array(sympy.symbols(node.name), node_values[0].shape))
+                    array=Array(node.name, node_values[0].shape))
             for in_node_raw in node.input:
                 is_control = False
                 if in_node_raw[0] == '^':
@@ -273,29 +275,26 @@ class Graph:
                 # except:
                 #     warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
                 #     temp = None
-                try:
-                    temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
-                    flag = True
-                    if isinstance(self.node_output[son].dtype, list):
-                        for x in self.node_output[son].dtype:
-                            if int(x) == 10:
-                                flag = False
-                                break
-                    else:
-                        flag = int(self.node_output[son].dtype) != 10
+                if turn_on_array:
+                    try:
+                        temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
+                        flag = True
+                        if isinstance(self.node_output[son].dtype, list):
+                            for x in self.node_output[son].dtype:
+                                if int(x) == 10:
+                                    flag = False
+                                    break
+                        else:
+                            flag = int(self.node_output[son].dtype) != 10
 
-                    if not flag:
-                        temp_array = None
-                except AttributeError:
-                    pass
-                except AssertionError:
-                    pass
+                        if not flag:
+                            temp_array = None
+                    except AttributeError:
+                        pass
+                    except AssertionError:
+                        pass
 
-            if isinstance(temp, tuple):
-                self.node_output[son].value = temp[0]
-                self.node_output[son].constraints = temp[1]
-            else:
-                self.node_output[son].value = temp
+            self.node_output[son].value = temp
 
             if temp_array is not None:
                 self.node_output[son].array = temp_array
@@ -305,19 +304,43 @@ class Graph:
                         if temp_array[i].index_slices is None:
                             temp.append(self.node_output[son].value[i])
                             continue
-                        left, right = self.get_left_right(tmp_array.get_possible_values(), son)
-                        if left is None:
+                        value = self.get_left_right(tmp_array.block_to_symbol, son)
+                        if value is None:
                             temp.append(self.node_output[son].value[i])
                         else:
-                            temp.append(Range(left=min(left), right=max(right)))
+                            temp.append(value)
                 elif temp_array.index_slices is not None:
-                    left, right = self.get_left_right(temp_array.get_possible_values(), son)
-                    if left is not None:
-                        temp = Range(left=min(left), right=max(right))
+                    value = self.get_left_right(temp_array.block_to_symbol, son)
+                    if value is not None:
+                        temp = value
 
                 self.node_output[son].value = temp
-                self.node_output[son].constraints = None
+            # elif temp is not None:
+            #     try:
+            #         if isinstance(temp, list):
+            #             for (i, tmp) in enumerate(temp):
+            #                 only_one = list(self.node_output[son].array[i].block_to_symbol.values())
+            #                 assert len(only_one) == 1
+            #                 if isinstance(tmp, Range):
+            #                     constraints.append(z3.And(only_one[0] >= tmp.left, only_one[0] <= tmp.right))
+            #                 else:
+            #                     constraints.append(
+            #                         z3.And(only_one[0] >= float(np.min(tmp)), only_one[0] <= float(np.max(tmp))))
+            #
+            #         else:
+            #             only_one = list(self.node_output[son].array.block_to_symbol.values())
+            #             assert len(only_one) == 1
+            #             if isinstance(temp, Range):
+            #                 constraints.append(z3.And(only_one[0] >= temp.left, only_one[0] <= temp.right))
+            #             else:
+            #                 constraints.append(
+            #                     z3.And(only_one[0] >= float(np.min(temp)), only_one[0] <= float(np.max(temp))))
+            #     except AssertionError:
+            #         raise AssertionError
+            #     except:
+            #         pass
 
+            self.node_output[son].constraints = None
             self.write(self.node_output[son])
 
         ret_constraints = []
@@ -329,21 +352,25 @@ class Graph:
 
     def backward_analysis_const(self, node, range_const):
         if self.node_output[node.name].value is not None:
-            yield meet(self.node_output[node.name].value, range_const)
+            # constraints = []
+            # for x in self.node_output[node.name].array.block_to_symbol:
+            #     constraints.append(
+            #         meet_relation_variable(self.node_output[node.name].array.block_to_symbol[x], range_const))
+            #
+            # return z3.And(meet(self.node_output[node.name].value, range_const), z3.Or(constraints))
+            return meet(self.node_output[node.name].value, range_const)
         else:
             raise NotImplementedError
 
-    def get_left_right(self, linear_expressions, name):
-        if len(linear_expressions) == 1 and len(linear_expressions[0]) == 0:
-            return [0], [0]
-        if len(linear_expressions) == 1 and linear_expressions[0][0] == 1 and linear_expressions[0][1] == name:
-            return None, None
+    def get_left_right(self, groups: dict, node_name):
         left = []
         right = []
-        for linear_expression in linear_expressions:
-            left_ele = None
-            right_ele = None
-            for (factor, name) in linear_expression:
+        for key in groups:
+            left_ele = 0
+            right_ele = 0
+            group = groups[key]
+            for (name, position) in group.value:
+                factor = group.value[(name, position)]
                 if name.find("|") != -1:
                     pos = name.find('|')
                     index = int(name[pos + 1:])
@@ -351,23 +378,20 @@ class Graph:
                 else:
                     index = None
 
+                if name == node_name:
+                    return None
+
                 value = InferValue.expanddims([self.node_output[name].index_of(index)],
                                               self.node_by_name[name]) * factor
-                if isinstance(value, Range):
-                    if factor < 0:
-                        value.left, value.right = value.right, value.left
-
-                if left_ele is None:
-                    left_ele = value.left
-                    right_ele = value.right
-                else:
-                    left_ele = left_ele + value.left
-                    right_ele = right_ele + value.right
+                if factor < 0:
+                    value.left, value.right = value.right, value.left
+                left_ele = left_ele + value.left
+                right_ele = right_ele + value.right
 
             left.append(left_ele)
             right.append(right_ele)
 
-        return left, right
+        return Range(left=min(left), right=max(right))
 
     def get_info(self):
         variable_cnt = 0

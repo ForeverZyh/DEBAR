@@ -3,6 +3,9 @@ from utils import resolve_type
 import math
 import numpy as np
 from itertools import product
+import warnings
+import copy
+import bisect
 
 
 class Solver:
@@ -28,6 +31,29 @@ class Solver:
         else:
             raise NotImplementedError("Cannot Recognize: ", dtype)
         return Solver.variable_by_name[real_name]
+
+    # @staticmethod
+    # def new_variable(real_name, dtype):
+    #     if dtype in [3]:
+    #         Solver.variable_by_name[real_name] = z3.Int(real_name)
+    #     elif dtype in [1]:
+    #         Solver.variable_by_name[real_name] = z3.Real(real_name)
+    #     elif dtype in [10]:
+    #         Solver.variable_by_name[real_name] = z3.Bool(real_name)
+    #     else:
+    #         Solver.variable_by_name[real_name] = z3.Real(real_name)
+    #         warnings.warn("Cannot Recognize: " + str(dtype), RuntimeWarning)
+    #     return Solver.variable_by_name[real_name]
+    #
+    # @staticmethod
+    # def add_variable_list(variables: list):
+    #     for (x, y) in variables:
+    #         name = x + " " + str(y)
+    #         Solver.new_variable(name, Array.name_to_dtype[x])
+    #
+    # @staticmethod
+    # def to_variable(x: tuple):
+    #     return Solver.variable_by_name[x[0] + " " + str(x[1])]
 
     @staticmethod
     def max(x, ys_):
@@ -126,8 +152,91 @@ class Range:
                      const_type=self.const_type)
 
 
+class Linear:
+    def __init__(self, e):
+        self.value = {e: 1}
+        self.map_to_index = {e: list(range(len(e[1])))}
+
+    def __str__(self):
+        return "%s\n%s" % (str(self.value), str(self.map_to_index))
+
+    def __repr__(self):
+        return "%s\n%s" % (str(self.value), str(self.map_to_index))
+
+    def __add__(self, other):
+        ret = copy.deepcopy(self)
+        for x in other.value:
+            if x in ret.value:
+                ret.value[x] += other.value[x]
+            else:
+                ret.value[x] = other.value[x]
+                ret.map_to_index[x] = other.map_to_index[x]
+        return ret
+
+    def __sub__(self, other):
+        ret = copy.deepcopy(self)
+        for x in other.value:
+            if x in ret.value:
+                ret.value[x] -= other.value[x]
+            else:
+                ret.value[x] = -other.value[x]
+                ret.map_to_index[x] = other.map_to_index[x]
+        return ret
+
+    def choose(self, start_ind):
+        # len(start_ind) = len(x[1]) = len(map)
+        ret = copy.deepcopy(self)
+        ret.value = {}
+        ret.map_to_index = {}
+        for x in self.value:
+            name, position = x
+            new_tp = list(position)  # if not mapped, then remain
+            map = self.map_to_index[x]
+            for t in range(len(start_ind)):
+                if map[t] is not None:
+                    i = map[t]
+                    if start_ind[t] is not None:
+                        new_tp[i] = (new_tp[i][0] + start_ind[t][0], new_tp[i][0] + start_ind[t][1])
+
+            ret.value[(name, tuple(new_tp))] = self.value[x]
+            ret.map_to_index[(name, tuple(new_tp))] = copy.deepcopy(map)
+
+        return ret
+
+    def transpose(self, perm):
+        # len(perm) = len(x[1]) = len(map)
+        ret = copy.deepcopy(self)
+        for x in self.value:
+            map = self.map_to_index[x]
+            new_map = [None] * len(map)
+            for t in range(len(perm)):
+                new_map[t] = map[perm[t]]
+            ret.map_to_index[x] = new_map
+
+        return ret
+
+    def add_pack_ind(self, pack_ind):
+        ret = copy.deepcopy(self)
+        for x in self.value:
+            map = self.map_to_index[x]
+            new_map = map[:pack_ind] + [None] + map[pack_ind:]
+            ret.map_to_index[x] = new_map
+
+        return ret
+
+    def remove_unpack_axis(self, axis):
+        ret = copy.deepcopy(self)
+        for x in self.value:
+            map = self.map_to_index[x]
+            new_map = map[:axis] + map[axis:]
+            ret.map_to_index[x] = new_map
+
+        return ret
+
+
 class Array:
-    def __init__(self, symbol, size):
+
+    def __init__(self, name, size):
         self.index_slices = []
         self.block_to_symbol = {}
         try:
@@ -153,7 +262,8 @@ class Array:
                 self.index_slices.append([int(size[i])])
             except:
                 self.index_slices.append([None])
-        self.block_to_symbol = {tuple([x[0] for x in self.index_slices]): symbol}
+        self.block_to_symbol = {
+            tuple([x[0] for x in self.index_slices]): Linear((name, tuple([(0, x[0]) for x in self.index_slices])))}
 
     @staticmethod
     def join_index_slices(a, b):
@@ -169,37 +279,42 @@ class Array:
         return ret
 
     def get_corresponding_keys(self, index_slices):
-        iargs = [None if x is None else 0 for x in self.index_slices]
         ret = []
         for indexes in product(*index_slices):
             key = ()
+            start_ind = []
             for i in range(len(indexes)):
                 if indexes[i] is not None:
-                    while indexes[i] > self.index_slices[i][iargs[i]]:
-                        iargs[i] += 1
+                    t = bisect.bisect_left(index_slices[i], indexes[i])
+                    start_ind.append([0 if t == 0 else index_slices[i][t - 1], indexes[i]])
+                    iargs = bisect.bisect_left(self.index_slices[i], indexes[i])
+                    if iargs > 0:
+                        start_ind[-1][0] -= self.index_slices[i][iargs - 1]
+                        start_ind[-1][1] -= self.index_slices[i][iargs - 1]
 
-                    key += (self.index_slices[i][iargs[i]],)
+                    key += (self.index_slices[i][iargs],)
                 else:
                     key += (None,)
+                    start_ind.append(None)
 
-            ret.append(self.block_to_symbol[key])
+            ret.append(self.block_to_symbol[key].choose(start_ind))
 
         return ret
 
-    def get_possible_values(self):
-        ret = []
-        for ix in self.block_to_symbol:
-            flag = True
-            x = self.block_to_symbol[ix]
-            for y in ret:
-                if y.equals(x):
-                    flag = False
-                    break
-
-            if flag:
-                ret.append(x)
-
-        return [str_2_linear_expression(str(x)) for x in ret]
+    # def get_possible_values(self):
+    #     ret = []
+    #     for ix in self.block_to_symbol:
+    #         flag = True
+    #         x = self.block_to_symbol[ix]
+    #         for y in ret:
+    #             if y.equals(x):
+    #                 flag = False
+    #                 break
+    #
+    #         if flag:
+    #             ret.append(x)
+    #
+    #     return [str_2_linear_expression(str(x)) for x in ret]
 
     def __str__(self):
         ret_str = ""
@@ -247,53 +362,71 @@ def meet(range, range_const: Range):
             else:
                 return True
     else:
-        if isinstance(range, Range):
-            if range_const.left is not None and range_const.right is not None:
-                return z3.And(range_const.left >= range.left, range.right >= range_const.right)
-            else:
-                return False
+        raise NotImplementedError
+        # if isinstance(range, Range):
+        #     if range_const.left is not None and range_const.right is not None:
+        #         return z3.And(range_const.left >= range.left, range.right >= range_const.right)
+        #     else:
+        #         return False
+        # else:
+        #     return z3.And(range_const.left == range, range == range_const.right)
+
+
+def meet_relation_variable(rv, range_const: Range):
+    if not check_range_const(range_const):
+        return False
+    assert range_const.const_type is not None
+
+    if range_const.const_type == 0:
+        if range_const.left is not None and range_const.right is not None:
+            return z3.And(range_const.left <= rv, rv <= range_const.right)
+        if range_const.right is not None:
+            return rv <= range_const.right
+        if range_const.left is not None:
+            return range_const.left <= rv
         else:
-            return range_const.left == range and range == range_const.right
+            return True
+    else:
+        raise NotImplementedError
 
-
-def str_2_linear_expression(x: str):
-    ret = []
-    x += " "
-    if x[0] != '-' and x[0] != '+':
-        x = "+" + x
-    sign = 1
-    factor = 0
-    symbol = ""
-    has_sign = False
-    has_factor = False
-    i = 0
-    while i < len(x):
-        if x[i] in ['-', '+']:
-            if x[i] == '-':
-                sign = -1
-            else:
-                sign = 1
-            has_sign = True
-        elif has_factor:
-            if x[i] == ' ':
-                ret.append((sign * factor, symbol))
-                sign = 1
-                factor = 0
-                symbol = ""
-                has_sign = False
-                has_factor = False
-            else:
-                symbol += x[i]
-        elif has_sign:
-            if '0' <= x[i] <= '9':
-                factor = factor * 10 + ord(x[i]) - 48
-            elif x[i] == '*':
-                has_factor = True
-            elif x[i] != ' ':
-                factor = 1
-                has_factor = True
-                symbol += x[i]
-
-        i += 1
-
-    return ret
+# def str_2_linear_expression(x: str):
+#     ret = []
+#     x += " "
+#     if x[0] != '-' and x[0] != '+':
+#         x = "+" + x
+#     sign = 1
+#     factor = 0
+#     symbol = ""
+#     has_sign = False
+#     has_factor = False
+#     i = 0
+#     while i < len(x):
+#         if x[i] in ['-', '+']:
+#             if x[i] == '-':
+#                 sign = -1
+#             else:
+#                 sign = 1
+#             has_sign = True
+#         elif has_factor:
+#             if x[i] == ' ':
+#                 ret.append((sign * factor, symbol))
+#                 sign = 1
+#                 factor = 0
+#                 symbol = ""
+#                 has_sign = False
+#                 has_factor = False
+#             else:
+#                 symbol += x[i]
+#         elif has_sign:
+#             if '0' <= x[i] <= '9':
+#                 factor = factor * 10 + ord(x[i]) - 48
+#             elif x[i] == '*':
+#                 has_factor = True
+#             elif x[i] != ' ':
+#                 factor = 1
+#                 has_factor = True
+#                 symbol += x[i]
+#
+#         i += 1
+#
+#     return ret

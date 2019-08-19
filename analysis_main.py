@@ -43,71 +43,55 @@ if __name__ == "__main__":
         if suspected_node.op in ["Exp", "Expm1"]:
             suspected_node_input = Range(left=math.log(OVERFLOW_LIMIT), right=None, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
-            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
-                                                                       suspected_node_input)
+            additional_constraint = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                  suspected_node_input)
 
         elif suspected_node.op == "RealDiv":
             suspected_node_input_y = Range(left=-UNDERFLOW_LIMIT, right=UNDERFLOW_LIMIT, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][1][0]]
-            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
-                                                                       suspected_node_input_y)
+            additional_constraint = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                  suspected_node_input_y)
 
         elif suspected_node.op == "Log":
             suspected_node_input = Range(left=None, right=UNDERFLOW_LIMIT, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
-            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
-                                                                       suspected_node_input)
+            additional_constraint = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                  suspected_node_input)
         elif suspected_node.op == "Sqrt":
             suspected_node_input = Range(left=None, right=-UNDERFLOW_LIMIT, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
-            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
-                                                                       suspected_node_input)
+            additional_constraint = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                  suspected_node_input)
         elif suspected_node.op == "Rsqrt":
             suspected_node_input = Range(left=None, right=UNDERFLOW_LIMIT, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
-            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
-                                                                       suspected_node_input)
+            additional_constraint = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                  suspected_node_input)
         elif suspected_node.op == "Log1p":
             suspected_node_input = Range(left=-UNDERFLOW_LIMIT - 1, right=UNDERFLOW_LIMIT - 1, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
-            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
-                                                                       suspected_node_input)
+            additional_constraint = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                  suspected_node_input)
         elif suspected_node.op == "Reciprocal":
             suspected_node_input_y = Range(left=-UNDERFLOW_LIMIT, right=UNDERFLOW_LIMIT, const_type=0)
             backward_analysis_const_start = graph.node_by_name[graph.graph_backward[suspected_node.name][0][0]]
-            additional_constraints_gen = graph.backward_analysis_const(backward_analysis_const_start,
-                                                                       suspected_node_input_y)
+            additional_constraint = graph.backward_analysis_const(backward_analysis_const_start,
+                                                                  suspected_node_input_y)
         else:
             raise NotImplementedError("No rule for ", suspected_node.op)
 
-        is_sat = False
-        has_unknown = False
-
-        for additional_constraints in additional_constraints_gen:
-            if additional_constraints == False:
-                # print("failed")
-                continue
-            S = z3.Solver()
-            all_constraints = [constraints, additional_constraints]
-            S.add(all_constraints)
-            # for x in all_constraints:
-            #     print(x)
-            # print(str(S.check()))
-            if str(S.check()) == "sat":
-                it = S.model()
-#                 print(it)
-                for x in it:
-                    graph.write(str(x) + ": " + str(it[x]))
-                is_sat = True
-                break
-            if str(S.check()) == "unknown":
-                has_unknown = True
-
-        if is_sat:
+        S = z3.Solver()
+        all_constraints = [constraints, additional_constraint]
+        S.add(all_constraints)
+        ans = str(S.check())
+        if ans == "sat":
+            it = S.model()
+            for x in it:
+                graph.write(str(x) + ": " + str(it[x]))
             print(suspected_node.op, suspected_node.name)
             print("sat")
             cnt_sat += 1
-        elif has_unknown:
+        elif ans == "unknown":
             print(suspected_node.op, suspected_node.name)
             print("unknown")
             cnt_unknown += 1
