@@ -6,7 +6,7 @@ import queue
 from graphviz import Digraph
 import warnings
 import z3
-from solver import meet, meet_relation_variable
+from solver import meet, meet_relation_variable, magic
 from solver import Range, Array, Solver
 from utils import *
 import numpy as np
@@ -370,7 +370,13 @@ class Graph:
             right_ele = 0
             group = groups[key]
             for (name, position) in group.value:
-                factor = group.value[(name, position)]
+                pre_name = name
+                if name[:5] == magic:
+                    name = name[5:]
+                    is_relu = True
+                else:
+                    is_relu = False
+
                 if name.find("|") != -1:
                     pos = name.find('|')
                     index = int(name[pos + 1:])
@@ -382,7 +388,31 @@ class Graph:
                     return None
 
                 value = InferValue.expanddims([self.node_output[name].index_of(index)],
-                                              self.node_by_name[name]) * factor
+                                              self.node_by_name[name])
+                factor = group.value[(pre_name, position)]
+                if is_relu and (name, position) in group.value:
+                    non_relu_factor = group.value[(name, position)]
+                    if factor < 0 and non_relu_factor > 0:
+                        t = min(-factor, non_relu_factor)
+                        group.value[(name, position)] -= t
+                        group.value[(pre_name, position)] += t
+                        left_ele += min(0, value.left) * t
+                        right_ele += min(0, value.right) * t
+
+                    if factor > 0 and non_relu_factor < 0:
+                        t = min(factor, -non_relu_factor)
+                        group.value[(name, position)] += t
+                        group.value[(pre_name, position)] -= t
+                        left_ele += max(0, -value.right) * t
+                        right_ele += max(0, -value.left) * t
+
+                factor = group.value[(pre_name, position)]
+
+                if is_relu:
+                    value.left = max(0, value.left)
+                    value.right = max(0, value.right)
+
+                value = value * factor
                 if factor < 0:
                     value.left, value.right = value.right, value.left
                 left_ele = left_ele + value.left

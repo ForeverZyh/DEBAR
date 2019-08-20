@@ -7,6 +7,8 @@ import warnings
 import copy
 import bisect
 
+magic = "Max~~"
+
 
 class Solver:
     solver = z3.Solver()
@@ -231,6 +233,21 @@ class Linear:
             new_map = map[:axis] + map[axis:]
             ret.map_to_index[x] = new_map
 
+        return ret
+
+    def neg(self):
+        for x in self.value:
+            self.value[x] *= -1
+
+    def relu(self):
+        ret = Linear(("dumy", (0, 1)))
+        ret.value = {}
+        ret.map_to_index = {}
+        for x in self.value:
+            name, position = x
+            if name[:5] != magic:
+                ret.value[(magic + name, position)] = self.value[x]
+                ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
         return ret
 
 
