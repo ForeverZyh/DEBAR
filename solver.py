@@ -240,6 +240,7 @@ class Linear:
             self.value[x] *= -1
 
     def relu(self):
+        assert len(self.value) <= 1
         ret = Linear(("dumy", (0, 1)))
         ret.value = {}
         ret.map_to_index = {}

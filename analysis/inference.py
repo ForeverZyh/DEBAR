@@ -1069,8 +1069,17 @@ class InferArray:
             return None
         assert len(args) == 2 and len(args[0].size) == len(args[1].size)
         ind = len(args[0].size)
-        # for i in range(ind):
-        #     assert args[0].size[i] == args[1].size[i]
+        for i in range(ind):
+            try:
+                l1 = int(args[0].size[i])
+            except:
+                l1 = -1
+            try:
+                l2 = int(args[1].size[i])
+            except:
+                l2 = -1
+            assert l1 == l2
+
         ret = Array("tmp", args[0].size)
         ret.block_to_symbol = dict()
         ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
@@ -1098,8 +1107,17 @@ class InferArray:
             return None
         assert len(args) == 2 and len(args[0].size) == len(args[1].size)
         ind = len(args[0].size)
-        # for i in range(ind):
-        #     assert args[0].size[i] == args[1].size[i]
+        for i in range(ind):
+            try:
+                l1 = int(args[0].size[i])
+            except:
+                l1 = -1
+            try:
+                l2 = int(args[1].size[i])
+            except:
+                l2 = -1
+            assert l1 == l2
+
         ret = Array("tmp", args[0].size)
         ret.block_to_symbol = dict()
         ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
