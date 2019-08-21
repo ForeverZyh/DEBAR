@@ -920,7 +920,33 @@ class InferValue:
 
     @staticmethod
     def floormod(args: list, node):
-        warnings.warn("floormod not implemented", RuntimeWarning)
+        def mod(x, y):
+            return x - math.floor(x / y) * y
+
+        assert len(args) == 2
+        try:
+            x = float(args[0].value)
+        except:
+            x = InferValue.expanddims([args[0]], node)
+        try:
+            y = float(args[1].value)
+        except:
+            y = InferValue.expanddims([args[1]], node)
+
+        if isinstance(x, Range) and isinstance(y, Range):
+            if y.left > 0 or y.right < 0:
+                ends = [mod(x.left, y.left), mod(x.left, y.right), mod(x.right, y.left), mod(x.right, y.right)]
+                return Range(left=min(ends), right=max(ends))
+            else:
+                return Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT)
+        elif not isinstance(y, Range):
+            return x * (1 / y)
+        else:
+            if y.left > 0 or y.right < 0:
+                ends = [mod(x, y.left), mod(x, y.right)]
+                return Range(left=min(ends), right=max(ends))
+            else:
+                return Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT)
 
     @staticmethod
     def iteratortostringhandle(args: list, node):

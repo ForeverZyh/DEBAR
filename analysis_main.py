@@ -33,7 +33,7 @@ if __name__ == "__main__":
     cnt_unsat = 0
     for suspected_node in suspected_nodes:
         # graph.draw(graph.backward_slice(suspected_node.name, set()), "real_interested")
-        if suspected_node.op == "RealDiv":
+        if suspected_node.op in ["RealDiv", "Floormod"]:
             constraints = graph.forward_analysis(graph.node_by_name[graph.graph_backward[suspected_node.name][1][0]],
                                                  suspected_node)
         else:
@@ -45,7 +45,7 @@ if __name__ == "__main__":
             suspected_node_input = Range(left=math.log(OVERFLOW_LIMIT), right=None, const_type=0)
             backward_analysis_const_start = graph.graph_backward[suspected_node.name][0][0]
             index = graph.edge_index[suspected_node.name][0]
-        elif suspected_node.op == "RealDiv":
+        elif suspected_node.op in ["RealDiv", "Floormod"]:
             suspected_node_input = Range(left=-UNDERFLOW_LIMIT, right=UNDERFLOW_LIMIT, const_type=0)
             backward_analysis_const_start = graph.graph_backward[suspected_node.name][1][0]
             index = graph.edge_index[suspected_node.name][1]
