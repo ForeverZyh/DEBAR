@@ -350,17 +350,18 @@ class Graph:
                 self.write(self.node_output[son].constraints)
         return z3.And(ret_constraints)
 
-    def backward_analysis_const(self, node, range_const):
-        if self.node_output[node.name].value is not None:
-            # constraints = []
-            # for x in self.node_output[node.name].array.block_to_symbol:
-            #     constraints.append(
-            #         meet_relation_variable(self.node_output[node.name].array.block_to_symbol[x], range_const))
-            #
-            # return z3.And(meet(self.node_output[node.name].value, range_const), z3.Or(constraints))
-            return meet(self.node_output[node.name].value, range_const)
-        else:
-            raise NotImplementedError
+    # def backward_analysis_const(self, node, range_const):
+    #     if self.node_output[node.name].value is not None:
+    #         print(range_const)
+    #         # constraints = []
+    #         # for x in self.node_output[node.name].array.block_to_symbol:
+    #         #     constraints.append(
+    #         #         meet_relation_variable(self.node_output[node.name].array.block_to_symbol[x], range_const))
+    #         #
+    #         # return z3.And(meet(self.node_output[node.name].value, range_const), z3.Or(constraints))
+    #         return meet(self.node_output[node.name].value, range_const)
+    #     else:
+    #         raise NotImplementedError
 
     def get_left_right(self, groups: dict, node_name):
         left = []

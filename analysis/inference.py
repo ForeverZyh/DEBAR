@@ -208,8 +208,10 @@ class InferValue:
         ind = 1
         for x in args[1].size[:-1]:
             ind *= int(x)
-        ends = [args[0].value.left * args[1].value.left * ind, args[0].value.left * args[1].value.right * ind,
-                args[0].value.right * args[1].value.left * ind, args[0].value.right * args[1].value.right * ind]
+        x = InferValue.expanddims([args[0]], node)
+        y = InferValue.expanddims([args[1]], node)
+        ends = [x.left * y.left * ind, x.left * y.right * ind,
+                x.right * y.left * ind, x.right * y.right * ind]
         return Range(left=min(ends), right=max(ends))
 
     @staticmethod
@@ -278,13 +280,11 @@ class InferValue:
 
         x = InferValue.expanddims([args[0]], node)
         mean = InferValue.expanddims([args[1]], node)
-        variance = InferValue.expanddims([args[2]], node)
-        offset = args[3].value
-        scale = args[4].value + epsilon
+        variance = InferValue.expanddims([args[2]], node) + epsilon
 
         if not is_training:
             offset = InferValue.expanddims([args[3]], node)
-            scale = InferValue.expanddims([AbstractInterpretation(value=args[4].value + epsilon)], node)
+            scale = InferValue.expanddims([args[4]], node)
             ends_scale_variance = [scale.left / variance.left, scale.right / variance.left,
                                    scale.left / variance.right,
                                    scale.right / variance.right]
@@ -573,6 +573,10 @@ class InferValue:
         return InferValue.expanddims(args, node)
 
     @staticmethod
+    def paddingfifoqueuev2(args: list, node):
+        return InferValue.randomshufflequeuev2(args, node)
+
+    @staticmethod
     def placeholder(args: list, node):
         assert len(args) == 0
         return getattr(parse_format_text, node.op.lower())(node)
@@ -583,9 +587,24 @@ class InferValue:
         return InferValue.mul(args, node)
 
     @staticmethod
+    def queuedequeuemanyv2(args: list, node):
+        assert len(args) == 2
+        return args[0].value
+
+    @staticmethod
     def randomshuffle(args: list, node):
         assert len(args) == 1
         return InferValue.expanddims(args, node)
+
+    @staticmethod
+    def randomshufflequeuev2(args: list, node):
+        assert len(args) == 0
+        return getattr(parse_format_text, "placeholder")(node)
+
+    @staticmethod
+    def randomstandardnormal(args: list, node):
+        assert len(args) == 1
+        return Range(left=UNDERFLOW_LIMIT * 10, right=1)
 
     @staticmethod
     def randomuniform(args: list, node):
@@ -655,6 +674,11 @@ class InferValue:
     def reshape(args: list, node):
         assert len(args) == 2
         return InferValue.expanddims(args, node)
+
+    @staticmethod
+    def resizebilinear(args: list, node):
+        assert len(args) == 2
+        return args[0].value
 
     @staticmethod
     def reversev2(args: list, node):
