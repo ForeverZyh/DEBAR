@@ -3,7 +3,7 @@ import parse.parse_format_text as parse_format_text
 import math
 import copy
 import warnings
-from solver import Range, Solver, Array
+from solver import Range, Solver, Array, Linear
 import numpy as np
 import z3
 from utils import OVERFLOW_D, UNDERFLOW_D, OVERFLOW_LIMIT, UNDERFLOW_LIMIT
