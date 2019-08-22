@@ -277,11 +277,18 @@ class Array:
         # else:
         for i in range(len(size)):
             try:
-                self.index_slices.append([int(size[i])])
+                self.index_slices.append(list(range(size[i])))
             except:
                 self.index_slices.append([None])
-        self.block_to_symbol = {
-            tuple([x[0] for x in self.index_slices]): Linear((name, tuple([(0, x[0]) for x in self.index_slices])))}
+        self.block_to_symbol = {}
+        for indexes in product(*self.index_slices):
+            new_tp = ()
+            for i in indexes:
+                if i is None:
+                    new_tp += ((0, None),)
+                else:
+                    new_tp += ((i, i + 1),)
+            self.block_to_symbol[tuple(indexes)] = Linear((name, new_tp))
 
     @staticmethod
     def join_index_slices(a, b):

@@ -1232,7 +1232,7 @@ class InferArray:
     def zeroslike(args: list, node):
         assert len(args) == 1
         ret = Array("tmp", args[0].size)
-        x = list(ret.block_to_symbol.keys())[0]
+        x = list(ret.block_to_symbol.keys())[-1]
         ret.block_to_symbol[x].value = {}
         ret.block_to_symbol[x].map_to_index = {}
 
