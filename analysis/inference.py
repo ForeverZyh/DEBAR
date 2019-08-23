@@ -1228,38 +1228,38 @@ class InferArray:
         assert len(args) == 1
         return args[0].array
 
-    @staticmethod
-    def zeroslike(args: list, node):
-        assert len(args) == 1
-        ret = Array("tmp", args[0].size)
-        x = list(ret.block_to_symbol.keys())[0]
-        ret.block_to_symbol[x].value = {}
-        ret.block_to_symbol[x].map_to_index = {}
-
-        return ret
-
-    @staticmethod
-    def relu(args: list, node):
-        assert len(args) == 1
-        ret = copy.deepcopy(args[0].array)
-        ret.block_to_symbol = {}
-        for x in args[0].array.block_to_symbol:
-            ret.block_to_symbol[x] = args[0].array.block_to_symbol[x].relu()
-        return ret
-
-    @staticmethod
-    def maximum(args: list, node):
-        try:
-            len(args[0].size) == len(args[1].size)
-        except:
-            return None
-        assert len(args) == 2 and len(args[0].size) == len(args[1].size)
-        one_value = list(args[1].array.block_to_symbol.values())
-        if len(one_value) == 1 and len(one_value[0].value) == 0:
-            return InferArray.relu([args[0]], node)
-        one_value = list(args[0].array.block_to_symbol.values())
-        if len(one_value) == 1 and len(one_value[0].value) == 0:
-            return InferArray.relu([args[1]], node)
+    # @staticmethod
+    # def zeroslike(args: list, node):
+    #     assert len(args) == 1
+    #     ret = Array("tmp", args[0].size)
+    #     x = list(ret.block_to_symbol.keys())[0]
+    #     ret.block_to_symbol[x].value = {}
+    #     ret.block_to_symbol[x].map_to_index = {}
+    #
+    #     return ret
+    #
+    # @staticmethod
+    # def relu(args: list, node):
+    #     assert len(args) == 1
+    #     ret = copy.deepcopy(args[0].array)
+    #     ret.block_to_symbol = {}
+    #     for x in args[0].array.block_to_symbol:
+    #         ret.block_to_symbol[x] = args[0].array.block_to_symbol[x].relu()
+    #     return ret
+    #
+    # @staticmethod
+    # def maximum(args: list, node):
+    #     try:
+    #         len(args[0].size) == len(args[1].size)
+    #     except:
+    #         return None
+    #     assert len(args) == 2 and len(args[0].size) == len(args[1].size)
+    #     one_value = list(args[1].array.block_to_symbol.values())
+    #     if len(one_value) == 1 and len(one_value[0].value) == 0:
+    #         return InferArray.relu([args[0]], node)
+    #     one_value = list(args[0].array.block_to_symbol.values())
+    #     if len(one_value) == 1 and len(one_value[0].value) == 0:
+    #         return InferArray.relu([args[1]], node)
 
     @staticmethod
     def neg(args: list, node):

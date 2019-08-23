@@ -156,8 +156,8 @@ class Range:
 
 class Linear:
     def __init__(self, e):
-        self.value = {e: 1}
-        self.map_to_index = {e: list(range(len(e[1])))}
+        self.value = [(e, 1)]
+        self.map_to_index = [list(range(len(e[1])))]
 
     def __str__(self):
         return "%s\n%s" % (str(self.value), str(self.map_to_index))
@@ -167,89 +167,83 @@ class Linear:
 
     def __add__(self, other):
         ret = copy.deepcopy(self)
-        for x in other.value:
-            if x in ret.value:
-                ret.value[x] += other.value[x]
-            else:
-                ret.value[x] = other.value[x]
-                ret.map_to_index[x] = other.map_to_index[x]
+        ret.value += other.value
+        ret.map_to_index += other.map_to_index
         return ret
 
     def __sub__(self, other):
         ret = copy.deepcopy(self)
-        for x in other.value:
-            if x in ret.value:
-                ret.value[x] -= other.value[x]
-            else:
-                ret.value[x] = -other.value[x]
-                ret.map_to_index[x] = other.map_to_index[x]
+        for i in range(len(other.value)):
+            ret.value.append((other.value[i][0], -other.value[i][1]))
+        ret.map_to_index += other.map_to_index
         return ret
 
     def choose(self, start_ind):
         # len(start_ind) = len(x[1]) = len(map)
         ret = copy.deepcopy(self)
-        ret.value = {}
-        ret.map_to_index = {}
-        for x in self.value:
+        ret.value = []
+        ret.map_to_index = []
+        for (ii, (x, factor)) in enumerate(self.value):
             name, position = x
             new_tp = list(position)  # if not mapped, then remain
-            map = self.map_to_index[x]
+            map = self.map_to_index[ii]
             for t in range(len(start_ind)):
                 if map[t] is not None:
                     i = map[t]
                     if start_ind[t] is not None:
                         new_tp[i] = (new_tp[i][0] + start_ind[t][0], new_tp[i][0] + start_ind[t][1])
 
-            ret.value[(name, tuple(new_tp))] = self.value[x]
-            ret.map_to_index[(name, tuple(new_tp))] = copy.deepcopy(map)
+            ret.value.append(((name, position), factor))
+            ret.map_to_index.append(map)
 
         return ret
 
     def transpose(self, perm):
         # len(perm) = len(x[1]) = len(map)
         ret = copy.deepcopy(self)
-        for x in self.value:
-            map = self.map_to_index[x]
+        for i in range(len(self.value)):
+            map = self.map_to_index[i]
             new_map = [None] * len(map)
             for t in range(len(perm)):
                 new_map[t] = map[perm[t]]
-            ret.map_to_index[x] = new_map
+            ret.map_to_index[i] = new_map
 
         return ret
 
     def add_pack_ind(self, pack_ind):
         ret = copy.deepcopy(self)
-        for x in self.value:
-            map = self.map_to_index[x]
+        for i in range(len(self.value)):
+            map = self.map_to_index[i]
             new_map = map[:pack_ind] + [None] + map[pack_ind:]
-            ret.map_to_index[x] = new_map
+            ret.map_to_index[i] = new_map
 
         return ret
 
     def remove_unpack_axis(self, axis):
         ret = copy.deepcopy(self)
-        for x in self.value:
-            map = self.map_to_index[x]
+        for i in range(len(self.value)):
+            map = self.map_to_index[i]
             new_map = map[:axis] + map[axis:]
-            ret.map_to_index[x] = new_map
+            ret.map_to_index[i] = new_map
 
         return ret
 
     def neg(self):
-        for x in self.value:
-            self.value[x] *= -1
+        for i in range(len(self.value)):
+            x, factor = self.value[i]
+            self.value[i] = (x, -factor)
 
-    def relu(self):
-        assert len(self.value) <= 1
-        ret = Linear(("dumy", (0, 1)))
-        ret.value = {}
-        ret.map_to_index = {}
-        for x in self.value:
-            name, position = x
-            if name[:5] != magic:
-                ret.value[(magic + name, position)] = self.value[x]
-                ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
-        return ret
+    # def relu(self):
+    #     assert len(self.value) <= 1
+    #     ret = Linear(("dumy", (0, 1)))
+    #     ret.value = {}
+    #     ret.map_to_index = {}
+    #     for x in self.value:
+    #         name, position = x
+    #         if name[:5] != magic:
+    #             ret.value[(magic + name, position)] = self.value[x]
+    #             ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
+    #     return ret
 
 
 class Array:
