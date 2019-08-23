@@ -309,10 +309,12 @@ class Graph:
                             temp.append(self.node_output[son].value[i])
                         else:
                             temp.append(value)
+                        self.node_output[son].array[i].flush(son + "|" + str(i))
                 elif temp_array.index_slices is not None:
                     value = self.get_left_right(temp_array.block_to_symbol, son)
                     if value is not None:
                         temp = value
+                    self.node_output[son].array.flush(son)
 
                 self.node_output[son].value = temp
             # elif temp is not None:

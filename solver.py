@@ -251,6 +251,7 @@ class Array:
     def __init__(self, name, size):
         self.index_slices = []
         self.block_to_symbol = {}
+        self.name = name
         try:
             len(size)
         except:
@@ -312,6 +313,18 @@ class Array:
             ret.append(self.block_to_symbol[key].choose(start_ind))
 
         return ret
+
+    def flush(self, name):
+        self.block_to_symbol = {}
+        for indexes in product(*self.index_slices):
+            new_tp = ()
+            for (i, x) in enumerate(indexes):
+                if x is None:
+                    new_tp += ((0, None),)
+                else:
+                    t = bisect.bisect_left(self.index_slices[i], x)
+                    new_tp += ((0 if t == 0 else self.index_slices[i][t - 1], x),)
+            self.block_to_symbol[tuple(indexes)] = Linear((name, new_tp))
 
     # def get_possible_values(self):
     #     ret = []
