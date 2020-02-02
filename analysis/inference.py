@@ -35,6 +35,17 @@ def safeexp(X):
         return np.array(ans)
     except:
         return min(math.exp(min(X, UPPER_BOUND)), OVERFLOW_LIMIT)
+    
+    
+def safepow(X, Y):
+    UPPER_BOUND = 100
+    try:
+        ans = []
+        for (x, y) in zip(X, Y):
+            ans.append(min(math.pow(x, y), OVERFLOW_LIMIT))
+        return np.array(ans)
+    except:
+        return min(math.pow(X, Y), OVERFLOW_LIMIT)
 
 
 class InferValue:
@@ -167,11 +178,11 @@ class InferValue:
             #              right=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False,
             #                          z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
             return Range(left=True, right=True)
-        elif int(attrs['SrcT'].type) in [9] and int(attrs['DstT'].type) in [3]:
+        elif int(attrs['SrcT'].type) in [9, 3] and int(attrs['DstT'].type) in [3, 5, 6, 1, 2]:
             return args[0].value
-        elif int(attrs['SrcT'].type) in [3] and int(attrs['DstT'].type) in [9]:
+        elif int(attrs['SrcT'].type) in [2] and int(attrs['DstT'].type) in [1]:
             return args[0].value
-        elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [3]:
+        elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [3, 9]:
             return InferValue.floor(args, node)
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
@@ -339,6 +350,11 @@ class InferValue:
 
     @staticmethod
     def identity(args: list, node):
+        assert len(args) == 1
+        return args[0].value
+    
+    @staticmethod
+    def isfinite(args: list, node):
         assert len(args) == 1
         return args[0].value
 
@@ -580,6 +596,18 @@ class InferValue:
     def placeholder(args: list, node):
         assert len(args) == 0
         return getattr(parse_format_text, node.op.lower())(node)
+    
+    @staticmethod
+    def pow(args: list, node):
+        assert len(args) == 2
+        if isinstance(args[0].value, Range) and isinstance(args[1].value, Range):
+            return Range(left=safepow(args[0].value.left, args[1].value.left), right=safepow(args[0].value.right, args[1].value.right))
+        elif isinstance(args[0].value, Range):
+            return Range(left=safepow(args[0].value.left, args[1].value), right=safepow(args[0].value.right, args[1].value))
+        elif isinstance(args[1].value, Range):
+            return Range(left=safepow(args[0].value, args[1].value.left), right=safepow(args[0].value, args[1].value.right))
+        else:
+            return math.pow(args[0].value, args[1].value)
 
     @staticmethod
     def prod(args: list, node):
