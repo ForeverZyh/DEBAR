@@ -75,7 +75,7 @@ class InferValue:
     @staticmethod
     def all(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), True,
@@ -86,7 +86,7 @@ class InferValue:
     @staticmethod
     def any(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), True,
@@ -177,7 +177,7 @@ class InferValue:
             #                         z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False, True)),
             #              right=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False,
             #                          z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         elif int(attrs['SrcT'].type) in [9, 3] and int(attrs['DstT'].type) in [3, 5, 6, 1, 2]:
             return args[0].value
         elif int(attrs['SrcT'].type) in [2] and int(attrs['DstT'].type) in [1]:
@@ -249,7 +249,7 @@ class InferValue:
     @staticmethod
     def equal(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
@@ -321,7 +321,7 @@ class InferValue:
     @staticmethod
     def greater(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
@@ -336,7 +336,7 @@ class InferValue:
     @staticmethod
     def greaterequal(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
@@ -371,7 +371,7 @@ class InferValue:
     @staticmethod
     def less(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
@@ -391,7 +391,7 @@ class InferValue:
     @staticmethod
     def logicaland(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if args[0].value is None or args[1].value is None:
@@ -406,7 +406,7 @@ class InferValue:
     @staticmethod
     def logicalnot(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 1
         # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), False,
@@ -417,7 +417,7 @@ class InferValue:
     @staticmethod
     def logicalor(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if args[0].value is None or args[1].value is None:
@@ -546,7 +546,7 @@ class InferValue:
     @staticmethod
     def notequal(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
 
     @staticmethod
@@ -596,6 +596,15 @@ class InferValue:
     def placeholder(args: list, node):
         assert len(args) == 0
         return getattr(parse_format_text, node.op.lower())(node)
+    
+    @staticmethod
+    def placeholderwithdefault(args: list, node):
+        assert len(args) == 1
+        tmp = getattr(parse_format_text, 'placeholder')(node)
+        if isinstance(args[0].value, Range):
+            return Range(left=min(args[0].value.left, tmp.left), right=max(args[0].value.right, tmp.right))
+        else:
+            return Range(left=min(args[0].value, tmp.left), right=max(args[0].value, tmp.right))
     
     @staticmethod
     def pow(args: list, node):
@@ -707,6 +716,11 @@ class InferValue:
     def resizebilinear(args: list, node):
         assert len(args) == 2
         return args[0].value
+    
+    @staticmethod
+    def resourcegather(args: list, node):
+        assert len(args) == 3
+        return InferValue.expanddims(args, node)
 
     @staticmethod
     def reversev2(args: list, node):
