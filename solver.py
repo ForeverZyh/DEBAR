@@ -7,7 +7,7 @@ import warnings
 import copy
 import bisect
 
-magic = "Max~~"
+magic = "$Max~"
 
 
 class Solver:
@@ -160,10 +160,10 @@ class Linear:
         self.map_to_index = {e: list(range(len(e[1])))}
 
     def __str__(self):
-        return "%s\n%s" % (str(self.value), str(self.map_to_index))
+        return "\t\tvalue: %s\n\t\tmap_to_index: %s" % (str(self.value), str(self.map_to_index))
 
     def __repr__(self):
-        return "%s\n%s" % (str(self.value), str(self.map_to_index))
+        return "\t\tvalue: %s\n\t\tmap_to_index: %s" % (str(self.value), str(self.map_to_index))
 
     def __add__(self, other):
         ret = copy.deepcopy(self)
@@ -246,9 +246,30 @@ class Linear:
         ret.map_to_index = {}
         for x in self.value:
             name, position = x
-            if name[:5] != magic:
-                ret.value[(magic + name, position)] = self.value[x]
-                ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
+            # relu(name)  if value[x] >= 0
+            #     then magic + name, value[x]
+            #     else magic + $ + name, abs(value[x])
+            #
+            # relu(magic + name) if value[x] >= 0
+            #     then magic + name, value[x]
+            #     else 0
+            if name[:5] != magic: # relu(name)
+                if self.value[x] >= 0:
+                    ret.value[(magic + name, position)] = self.value[x]
+                    ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
+                else:
+                    ret.value[(magic + name, position)] = -self.value[x]
+                    ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
+                    ret.value[(name, position)] = self.value[x]
+                    ret.map_to_index[(name, position)] = self.map_to_index[x]
+            else:
+                if self.value[x] >= 0:
+                    ret.value[(name, position)] = self.value[x]
+                    ret.map_to_index[(name, position)] = self.map_to_index[x]
+                else:
+                    ret.value[(name, position)] = 0
+                    ret.map_to_index[(name, position)] = self.map_to_index[x]
+                
         return ret
 
 

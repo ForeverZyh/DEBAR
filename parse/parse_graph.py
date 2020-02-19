@@ -1,6 +1,6 @@
 from google.protobuf import text_format
 import tensorflow as tf
-from analysis.inference import InferValue, InferArray
+from analysis.inference import InferValue, InferArray, identity
 from analysis.abstract_interpretation import AbstractInterpretation
 import queue
 from graphviz import Digraph
@@ -209,13 +209,13 @@ class Graph:
         nodes_interested = self.backward_slice(node_interested.name, set())
         for node in nodes_interested:
             if "gradient" in node.lower() and "stopgradient" not in node.lower():
-                print("----------Gradients are not interested----------")
+                self.write("----------Gradients are not interested----------")
                 return None
 
         nodes_interested.sort(key=lambda x: self.nodes_in_main_clique_topology[x])
         if appended is not None:
             if "gradient" in appended.name.lower() and "stopgradient" not in appended.name.lower():
-                print("----------Gradients are not interested----------")
+                self.write("----------Gradients are not interested----------")
                 return None
             nodes_interested.append(appended.name)
 
@@ -237,7 +237,7 @@ class Graph:
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
             if son in self.node_visited:
-                self.write(str(son) + "passed")
+#                 self.write(str(son) + "passed")
                 continue
 
             self.write(son)
@@ -296,7 +296,7 @@ class Graph:
 
             self.node_output[son].value = temp
 
-            if temp_array is not None:
+            if temp_array is not None and isinstance(temp, Range):
                 self.node_output[son].array = temp_array
                 if isinstance(temp_array, list):
                     temp = []
@@ -347,7 +347,7 @@ class Graph:
         for son in nodes_interested[:-1]:
             if self.node_output[son].constraints is not None:
                 ret_constraints.append(self.node_output[son].constraints)
-                self.write(self.node_output[son].constraints)
+#                 self.write(self.node_output[son].constraints)
         return z3.And(ret_constraints)
 
     # def backward_analysis_const(self, node, range_const):
@@ -370,54 +370,82 @@ class Graph:
             left_ele = 0
             right_ele = 0
             group = groups[key]
-            for (name, position) in group.value:
-                pre_name = name
-                if name[:5] == magic:
-                    name = name[5:]
-                    is_relu = True
-                else:
-                    is_relu = False
-
+            new_relu = {}
+            
+            def get_value(name):
                 if name.find("|") != -1:
                     pos = name.find('|')
                     index = int(name[pos + 1:])
-                    name = name[:pos]
+                    return identity([self.node_output[name[:pos]].index_of(index)])
                 else:
-                    index = None
-
-                if name == node_name:
-                    return None
-
-                value = InferValue.expanddims([self.node_output[name].index_of(index)],
-                                              self.node_by_name[name])
-                factor = group.value[(pre_name, position)]
-                if is_relu and (name, position) in group.value:
-                    non_relu_factor = group.value[(name, position)]
-                    if factor < 0 and non_relu_factor > 0:
-                        t = min(-factor, non_relu_factor)
-                        group.value[(name, position)] -= t
-                        group.value[(pre_name, position)] += t
-                        left_ele += min(0, value.left) * t
-                        right_ele += min(0, value.right) * t
-
-                    if factor > 0 and non_relu_factor < 0:
-                        t = min(factor, -non_relu_factor)
-                        group.value[(name, position)] += t
-                        group.value[(pre_name, position)] -= t
-                        left_ele += max(0, -value.right) * t
-                        right_ele += max(0, -value.left) * t
-
-                factor = group.value[(pre_name, position)]
-
+                    return identity([self.node_output[name].index_of(None)])
+                
+            def update_ele(factor, value, is_relu):
                 if is_relu:
-                    value.left = max(0, value.left)
-                    value.right = max(0, value.right)
+                    value = Range(left=max(0, value.left), right=max(0, value.right))
 
                 value = value * factor
                 if factor < 0:
                     value.left, value.right = value.right, value.left
+                return value
+                
+            for (name, position) in group.value:
+                pre_name = name
+                if name[:5] == magic: # We first skip relu_value
+                    continue
+                
+                if name == node_name:
+                    return None
+                
+                value = get_value(name)
+                
+                if value is None: ## only happens when self.node_output[name].index_of(index) is a zero-size array.
+                    continue
+                    
+                value = Range(left=value.left, right=value.right)
+                
+                non_relu_factor = group.value[(pre_name, position)]
+                relu_name = magic + name
+                # we first del the key,value pair in the dict
+                if (relu_name, position) in group.value:
+                    relu_factor = group.value[(relu_name, position)]
+                else:
+                    relu_factor = 0
+
+                # this will be encountered second
+                if relu_factor < 0 and non_relu_factor > 0:
+                    t = min(-relu_factor, non_relu_factor)
+                    non_relu_factor -= t # sub back the non_relu_factor
+                    relu_factor += t # add back the relu_factor
+                    left_ele += min(0, value.left) * t
+                    right_ele += min(0, value.right) * t
+
+                if relu_factor > 0 and non_relu_factor < 0:
+                    t = min(relu_factor, -non_relu_factor)
+                    non_relu_factor += t # add back the non_relu_factor
+                    relu_factor -= t # sub back the relu_factor
+                    left_ele += max(0, -value.right) * t
+                    right_ele += max(0, -value.left) * t
+
+                # we add back non-zero relu_factor
+                if relu_factor != 0:
+                    new_relu[(relu_name, position)] = relu_factor
+
+                value = update_ele(non_relu_factor, value, False)
                 left_ele = left_ele + value.left
                 right_ele = right_ele + value.right
+            
+            for (name, position) in new_relu:
+                value = get_value(name[len(magic):])
+                
+                if value is None: ## only happens when self.node_output[name].index_of(index) is a zero-size array.
+                    continue
+                    
+                value = Range(left=value.left, right=value.right)
+                value = update_ele(new_relu[(name, position)], value, True)
+                left_ele = left_ele + value.left
+                right_ele = right_ele + value.right
+                
 
             left.append(left_ele)
             right.append(right_ele)
@@ -441,6 +469,8 @@ class Graph:
                             x = 0
 
                 tmp = 1
+                if str(u) == '<unknown>':
+                    continue
                 for x in u:
                     tmp *= int(x)
                 variable_cnt += tmp
