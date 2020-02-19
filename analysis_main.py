@@ -34,7 +34,7 @@ if __name__ == "__main__":
     for suspected_node in suspected_nodes:
         # graph.draw(graph.backward_slice(suspected_node.name, set()), "real_interested")
         if suspected_node.op in ["RealDiv", "Floormod"]:
-            constraints = graph.forward_analysis(graph.node_by_name[graph.graph_backward[suspected_node.name][1][0]],
+            constraints = graph.forward_analysis(graph.node_by_name[graph.graph_backward[0][suspected_node.name][1]],
                                                  suspected_node)
         else:
             constraints = graph.forward_analysis(suspected_node)
@@ -43,31 +43,31 @@ if __name__ == "__main__":
 
         if suspected_node.op in ["Exp", "Expm1"]:
             suspected_node_input = Range(left=math.log(OVERFLOW_LIMIT), right=None, const_type=0)
-            backward_analysis_const_start = graph.graph_backward[suspected_node.name][0][0]
+            backward_analysis_const_start = graph.graph_backward[0][suspected_node.name][0]
             index = graph.edge_index[suspected_node.name][0]
         elif suspected_node.op in ["RealDiv", "Floormod"]:
             suspected_node_input = Range(left=-UNDERFLOW_LIMIT, right=UNDERFLOW_LIMIT, const_type=0)
-            backward_analysis_const_start = graph.graph_backward[suspected_node.name][1][0]
+            backward_analysis_const_start = graph.graph_backward[0][suspected_node.name][1]
             index = graph.edge_index[suspected_node.name][1]
         elif suspected_node.op == "Log":
             suspected_node_input = Range(left=None, right=UNDERFLOW_LIMIT, const_type=0)
-            backward_analysis_const_start = graph.graph_backward[suspected_node.name][0][0]
+            backward_analysis_const_start = graph.graph_backward[0][suspected_node.name][0]
             index = graph.edge_index[suspected_node.name][0]
         elif suspected_node.op == "Sqrt":
             suspected_node_input = Range(left=None, right=-UNDERFLOW_LIMIT, const_type=0)
-            backward_analysis_const_start = graph.graph_backward[suspected_node.name][0][0]
+            backward_analysis_const_start = graph.graph_backward[0][suspected_node.name][0]
             index = graph.edge_index[suspected_node.name][0]
         elif suspected_node.op == "Rsqrt":
             suspected_node_input = Range(left=None, right=UNDERFLOW_LIMIT, const_type=0)
-            backward_analysis_const_start = graph.graph_backward[suspected_node.name][0][0]
+            backward_analysis_const_start = graph.graph_backward[0][suspected_node.name][0]
             index = graph.edge_index[suspected_node.name][0]
         elif suspected_node.op == "Log1p":
             suspected_node_input = Range(left=-UNDERFLOW_LIMIT - 1, right=UNDERFLOW_LIMIT - 1, const_type=0)
-            backward_analysis_const_start = graph.graph_backward[suspected_node.name][0][0]
+            backward_analysis_const_start = graph.graph_backward[0][suspected_node.name][0]
             index = graph.edge_index[suspected_node.name][0]
         elif suspected_node.op == "Reciprocal":
             suspected_node_input = Range(left=-UNDERFLOW_LIMIT, right=UNDERFLOW_LIMIT, const_type=0)
-            backward_analysis_const_start = graph.graph_backward[suspected_node.name][0][0]
+            backward_analysis_const_start = graph.graph_backward[0][suspected_node.name][0]
             index = graph.edge_index[suspected_node.name][0]
         else:
             raise NotImplementedError("No rule for ", suspected_node.op)

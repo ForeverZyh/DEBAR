@@ -758,17 +758,13 @@ class InferValue:
         if not isinstance(args[0].value, Range):
             # print(args[0].value)
             raise NotImplementedError("not implemented when the condition is known")
+        
         x = identity([args[1]], node)
         y = identity([args[2]], node)
         if not turn_on_bool:
             return Range(left=min(x.left, y.left), right=max(x.right, y.right))
         raise NotImplementedError
-        # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), x.left,
-        #                         z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), y.left,
-        #                               z3.If(x.left < y.left, x.left, y.left))),
-        #              right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), x.right,
-        #                          z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), y.right,
-        #                                z3.If(x.right > y.right, x.right, y.right))))
+
 
     @staticmethod
     def shape(args: list, node):

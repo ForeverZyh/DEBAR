@@ -152,6 +152,9 @@ class Range:
         return Range(left=None if self.left is None else self.left + other,
                      right=None if self.right is None else self.right + other,
                      const_type=self.const_type)
+    
+    def single(self):
+        return self.left == self.right
 
 
 class Linear:
