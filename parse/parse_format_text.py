@@ -25,7 +25,7 @@ def iteratorv2(node):
 def variablev2(node):
     attrs = node.attr
     dtype = attrs["dtype"].type
-    shape = attrs["dtype"].shape
+    shape = attrs["shape"].shape
     if dtype in [1, 2, 19] and len(shape_from_proto(shape)) > 0:
         return Range(left=-1, right=1)
     else:

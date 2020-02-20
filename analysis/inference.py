@@ -172,18 +172,21 @@ class InferValue:
         # tf.float64 2; tf.float32: 1; tf.float16: 19; 
         # tf.bool: 10; 
         assert len(args) == 1
+        bool_proto = [10]
+        int_proto = [9, 3, 5, 6]
+        float_proto = [2, 1, 19]
         attrs = node.attr
-        if int(attrs['SrcT'].type) in [10] and int(attrs['DstT'].type) in [1]:
+        if int(attrs['SrcT'].type) in bool_proto and int(attrs['DstT'].type) in int_proto + float_proto:
             return Range(left=0, right=1)
-        elif int(attrs['SrcT'].type) in [10] and int(attrs['DstT'].type) in [3]:
-            return Range(left=0, right=1)
-        elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [10]:
+        elif int(attrs['SrcT'].type) in int_proto + float_proto and int(attrs['DstT'].type) in [10]:
             return Range(left=False, right=True)
-        elif int(attrs['SrcT'].type) in [9, 3] and int(attrs['DstT'].type) in [3, 5, 6, 1, 2]:
+        elif int(attrs['SrcT'].type) in int_proto and int(attrs['DstT'].type) in int_proto:
             return args[0].value
-        elif int(attrs['SrcT'].type) in [2] and int(attrs['DstT'].type) in [1]:
+        elif int(attrs['SrcT'].type) in float_proto and int(attrs['DstT'].type) in float_proto:
             return args[0].value
-        elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [3, 9]:
+        elif int(attrs['SrcT'].type) in int_proto and int(attrs['DstT'].type) in float_proto:
+            return args[0].value
+        elif int(attrs['SrcT'].type) in float_proto and int(attrs['DstT'].type) in int_proto:
             return InferValue.floor(args, node)
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
