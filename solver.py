@@ -7,7 +7,8 @@ import warnings
 import copy
 import bisect
 
-magic = "$Max~"
+magic = "$relu"
+magic1 = "$max"
 
 
 class Solver:
@@ -161,6 +162,8 @@ class Linear:
     def __init__(self, e):
         self.value = {e: 1}
         self.map_to_index = {e: list(range(len(e[1])))}
+        # map_to_index is the mapping from e = (name, position) to the index of outer index_slice
+        # if position = (l_0,r_0) ... (l_n,r_n) then name[l_0:r_0,:,...,:] is mapped to outer[..., map_to_index[0]-th , ...]
 
     def __str__(self):
         return "\t\tvalue: %s\n\t\tmap_to_index: %s" % (str(self.value), str(self.map_to_index))
@@ -256,7 +259,8 @@ class Linear:
             # relu(magic + name) if value[x] >= 0
             #     then magic + name, value[x]
             #     else 0
-            if name[:5] != magic: # relu(name)
+            assert name[:len(magic1)] != magic1 # we don't consider two magic tag situation 
+            if name[:len(magic)] != magic: # relu(name)
                 if self.value[x] >= 0:
                     ret.value[(magic + name, position)] = self.value[x]
                     ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
@@ -274,6 +278,23 @@ class Linear:
                     ret.map_to_index[(name, position)] = self.map_to_index[x]
                 
         return ret
+    
+#     def Max(self):
+#         assert len(self.value) <= 1
+#         ret = Linear(("dumy", (0, 1)))
+#         ret.value = {}
+#         ret.map_to_index = {}
+#         for x in self.value:
+#             name, position = x
+#             assert name[:len(magic)] != magic # we don't consider two magic tag situation 
+#             if name[:len(magic1)] != magic1:
+#                 ret.value[(magic1 + name, position)] = self.value[x]
+#                 ret.map_to_index[(magic1 + name, position)] = self.map_to_index[x]
+#             else:
+#                 ret.value[(name, position)] = self.value[x]
+#                 ret.map_to_index[(name, position)] = self.map_to_index[x]
+                
+#         return ret
 
 
 class Array:

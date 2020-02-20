@@ -476,6 +476,16 @@ class InferValue:
     @staticmethod
     def max(args: list, node):
         assert len(args) == 2
+        return args[0].value
+
+    @staticmethod
+    def maxpool(args: list, node):
+        assert len(args) == 1
+        return args[0].value
+
+    @staticmethod
+    def maximum(args: list, node):
+        assert len(args) == 2
         x = args[0].value
         y = args[1].value
         if isinstance(x, Range) and isinstance(y, Range):
@@ -487,15 +497,6 @@ class InferValue:
                 x, y = y, x
             y = resolve_type(np.max(y))
             return Range(left=max(x.left, y), right=max(x.right, y))
-
-    @staticmethod
-    def maxpool(args: list, node):
-        assert len(args) == 1
-        return args[0].value
-
-    @staticmethod
-    def maximum(args: list, node):
-        return InferValue.max(args, node)
 
     @staticmethod
     def mean(args: list, node):
@@ -515,6 +516,11 @@ class InferValue:
     @staticmethod
     def min(args: list, node):
         assert len(args) == 2
+        return args[0].value
+
+    @staticmethod
+    def minimum(args: list, node):
+        assert len(args) == 2
         x = args[0].value
         y = args[1].value
         if isinstance(x, Range) and isinstance(y, Range):
@@ -526,10 +532,6 @@ class InferValue:
                 x, y = y, x
             y = resolve_type(np.min(y))
             return Range(left=min(x.left, y), right=min(x.right, y))
-
-    @staticmethod
-    def minimum(args: list, node):
-        return InferValue.min(args, node)
 
     @staticmethod
     def mul(args: list, node):
@@ -1318,13 +1320,39 @@ class InferArray:
         return ret
 
     @staticmethod
-    def relu(args: list, node):
+    def relu(args: list, node): 
+        # right now it will abort when it encounters relu(z=x-y). 
+        # A better approach is to set it to relu(z) instead of aborting.
         assert len(args) == 1
         ret = copy.deepcopy(args[0].array)
         ret.block_to_symbol = {}
         for x in args[0].array.block_to_symbol:
             ret.block_to_symbol[x] = args[0].array.block_to_symbol[x].relu()
         return ret
+    
+#     @staticmethod
+#     def max(args: list, node):
+#         assert len(args) == 2
+#         axises = np.int32(args[1].value)
+#         for axis in axises:
+#             if len(args[0].array.index_slices[axis]) > 1:
+#                 return None
+#         ret = Array("tmp", args[0].size)
+#         ret.block_to_symbol = dict()
+#         index_slices = []
+#         for i in range(len(args[0].array.index_slices)):
+#             if i not in axises:
+#                 index_slices.append(args[0].array.index_slices[i])
+#         ret.index_slices = index_slices
+#         for indexes in args[0].array.block_to_symbol:
+#             ans = args[0].array.block_to_symbol[indexes]
+#             for axis in axises:
+#                 ans = ans.remove_unpack_axis(axis)
+#                 ans = ans.add_pack_ind(axis)
+            
+#             ret.block_to_symbol[indexes] = ans.Max()
+            
+#         return ret
 
     @staticmethod
     def maximum(args: list, node):
@@ -1348,20 +1376,6 @@ class InferArray:
             ret.block_to_symbol[x].neg()
 
         return ret
-
-    #
-    # @staticmethod
-    # def exp(args: list, node):
-    #     assert len(args) == 1
-    #     ret = copy.deepcopy(args[0].array)
-    #     constraints = []
-    #     for x in ret.block_to_symbol:
-    #         pre = ret.block_to_symbol[x]
-    #         now = Solver.add_variable("exp", 1)
-    #         ret.block_to_symbol[x] = now
-    #         constraints.append(z3.Or(z3.And(pre >= 0, now >= 1), z3.And(pre < 0, now < 1, now >= 0)))
-    #
-    #     return ret, z3.And(constraints)
 
     @staticmethod
     def pack(args: list, node):
