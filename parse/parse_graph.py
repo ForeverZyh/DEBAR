@@ -1,6 +1,6 @@
 from google.protobuf import text_format
 import tensorflow as tf
-from analysis.inference import InferValue, InferArray, identity
+from analysis.inference import InferValue, InferArray, identity, dumy
 from analysis.abstract_interpretation import AbstractInterpretation
 import queue
 from graphviz import Digraph
@@ -59,8 +59,8 @@ class Graph:
         self.main_clique = None
         self.tensor_to_op = {}
         self.nodes_in_main_clique_topology = {}
-        self.build()
         self.file = None if verbose_file is None else open(verbose_file, "w")
+        self.build()
 
     def write(self, x):
         if self.file is None:
@@ -160,19 +160,17 @@ class Graph:
 
             if len(nodes_in_main_clique) == 0:
                 break
-
+                
             min_ind = None
             for node_name in nodes_in_main_clique:
-                flag = False
-                if node_name in self.graph_backward[0]:
-                    for (i, in_node_name) in enumerate(self.graph_backward[0][node_name]):
-                        if self.edge_index[node_name][i] is not None:
-                            flag = True
-                            break
-                if flag:
-                    continue
                 if self.node_by_name[node_name].op == "Merge":
-                    if min_ind is None or node_inds[node_name] < node_inds[min_ind]:
+                    can_add = True
+                    for in_node_name in self.graph_backward[0][node_name]:
+                        if in_node_name in nodes_in_main_clique and self.node_by_name[in_node_name].op != "NextIteration":
+                            can_add = False
+                            break
+                            
+                    if can_add and (min_ind is None or node_inds[node_name] < node_inds[min_ind]):
                         min_ind = node_name
 
             assert min_ind is not None
@@ -215,10 +213,10 @@ class Graph:
         for (i, in_node_name) in enumerate(self.graph_backward[0][son]): # only care about non_control edges
             if in_node_name not in self.node_visited:
                 # there is a loop, and the node is "Merge"
+                print(self.node_by_name[in_node_name].op)
                 assert self.node_by_name[in_node_name].op == "NextIteration"
                 self.node_visited.add(in_node_name)
-                self.node_output[in_node_name].value = Range(name="nextiteration",
-                                                             dtype=self.node_output[in_node_name].dtype)
+                self.node_output[in_node_name].value = dumy()
 
             parents_aps.append(self.node_output[in_node_name].index_of(self.edge_index[son][i]))
             all_none &= parents_aps[-1].has_none()

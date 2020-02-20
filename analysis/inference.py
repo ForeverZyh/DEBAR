@@ -276,21 +276,20 @@ class InferValue:
 
     @staticmethod
     def expanddims(args: list, node):
-        try:
-            assert not isinstance(args[0].value, Range)
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             return np.expand_dims(args[0].value, axis=np.int32(args[1].value))
-        except:
+        else:
             return identity(args, node)
 
     @staticmethod
     def fill(args: list, node):
         assert len(args) == 2
-        try:
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             ret = np.empty(args[0].value)
             ret.fill(args[1].value)
             return ret
-        except:
-            return args[1].value
+        else:
+            return identity([args[1]])
 
     @staticmethod
     def floor(args: list, node):
@@ -724,9 +723,9 @@ class InferValue:
     @staticmethod
     def reshape(args: list, node):
         assert len(args) == 2
-        try:
+        if not isinstance(args[0].value, Range):
             return np.reshape(args[0].value, np.int32(args[1].value))
-        except:
+        else:
             return identity(args, node)
 
     @staticmethod
@@ -922,9 +921,9 @@ class InferValue:
     @staticmethod
     def tile(args: list, node):
         assert len(args) == 2
-        try:
+        if not isinstance(args[0].value, Range):
             return np.tile(args[0].value, np.int32(args[1].value))
-        except:
+        else:
             return identity(args, node)
 
     @staticmethod
