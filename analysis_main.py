@@ -5,6 +5,7 @@ from utils import OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 import math
 import sys
 
+
 sys.setrecursionlimit(100000)
 try:
     assert len(sys.argv) == 2
@@ -15,6 +16,8 @@ except:
     exit(1)
 
 rule = ["Log", "Exp", "RealDiv", "Sqrt", "Rsqrt", "Expm1", "Log1p", "Reciprocal"]
+split_num = 2
+range_to_split_len_limit = 10
 # rule = ["RealDiv"]
 if __name__ == "__main__":
     graph = Graph(pbtxt, "verbose.txt")
@@ -34,11 +37,11 @@ if __name__ == "__main__":
     for suspected_node in suspected_nodes:
         # graph.draw(graph.backward_slice(suspected_node.name, set()), "real_interested")
         if suspected_node.op in ["RealDiv", "Floormod"]:
-            constraints = graph.forward_analysis(graph.node_by_name[graph.graph_backward[0][suspected_node.name][1]],
+            ret = graph.forward_analysis(graph.node_by_name[graph.graph_backward[0][suspected_node.name][1]],
                                                  suspected_node)
         else:
-            constraints = graph.forward_analysis(suspected_node)
-        if constraints is None:
+            ret = graph.forward_analysis(suspected_node)
+        if ret is None:
             continue
 
         if suspected_node.op in ["Exp", "Expm1"]:
@@ -71,30 +74,51 @@ if __name__ == "__main__":
             index = graph.edge_index[suspected_node.name][0]
         else:
             raise NotImplementedError("No rule for ", suspected_node.op)
-
-        try:
-            input = graph.node_output[backward_analysis_const_start].value[index]
-        except:
-            input = graph.node_output[backward_analysis_const_start].value
-        additional_constraint = meet(input, suspected_node_input)
-
-        S = z3.Solver()
-        all_constraints = [constraints, additional_constraint]
-        S.add(all_constraints)
-        ans = str(S.check())
-        if ans == "sat":
-            it = S.model()
-            for x in it:
-                graph.write(str(x) + ": " + str(it[x]))
+            
+        def is_valid(input_range):
+            additional_constraint = meet(input_range, suspected_node_input)
+            S = z3.Solver()
+            S.add(additional_constraint)
+            ans = S.check()
+            assert ans != z3.unknown
+            return ans == z3.unsat
+        
+        def is_valid_by_split():
+            if is_valid(graph.node_output[backward_analysis_const_start].index_of(index).value):
+                return True
+            else:
+                range_to_split, nodes_interested = ret
+                range_to_split = list(range_to_split)
+                if len(range_to_split) > range_to_split_len_limit:
+                    return False
+                for name in range_to_split:
+                    override_dict = {}
+                    # if the name has |, we have to remove it to get the name in the graph
+                    changed = set()
+                    if name.find('|') != -1:
+                        changed.add(name[:name.find('|')])
+                    else:
+                        changed.add(name)
+                    value = graph.get_value(name)
+                    span = value.right - value.left
+                    is_span_valid = True
+                    for segment_id in range(split_num):
+                        override_dict[name] = Range(left=value.left + segment_id * span / split_num,right=value.left + (segment_id + 1) * span / split_num)
+                        node_out = graph.reevaluate(nodes_interested, backward_analysis_const_start, changed, override_dict)
+                        if not is_valid(node_out.index_of(index).value):
+                            is_span_valid = False
+                            break
+                    if is_span_valid:
+                        return True
+                
+                return False
+                
+                
+        if not is_valid_by_split():
             print(suspected_node.op, suspected_node.name)
             print("sat")
             cnt_sat += 1
-        elif ans == "unknown":
-            print(suspected_node.op, suspected_node.name)
-            print("unknown")
-            cnt_unknown += 1
         else:
-            # print("unsat")
             cnt_unsat += 1
         cnt_all += 1
     print("all: ", cnt_all, "sat: ", cnt_sat, "unsat: ", cnt_unsat, "unknown: ", cnt_unknown)
