@@ -865,7 +865,7 @@ class InferValue:
         assert len(args) == 2
         if args[0].value is None:
             return None
-        if isinstance(args[0].value, Range):
+        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range):
             try:
                 ind = int(args[0].size[int(args[1].value)])
                 return Range(left=args[0].value.left * ind, right=args[0].value.right * ind)
@@ -877,7 +877,7 @@ class InferValue:
                 else:
                     return t
         else:
-            return np.sum(args[0].value, axis=args[1].value)
+            return np.sum(args[0].value, axis=tuple(np.int32(args[1].value)))
 
     @staticmethod
     def switch(args: list, node):

@@ -166,7 +166,8 @@ class Graph:
                 if self.node_by_name[node_name].op == "Merge":
                     can_add = True
                     for in_node_name in self.graph_backward[0][node_name]:
-                        if in_node_name in nodes_in_main_clique and self.node_by_name[in_node_name].op != "NextIteration":
+                        if in_node_name in nodes_in_main_clique and self.node_by_name[in_node_name].op != "NextIteration": 
+                            # if a Merge is not dominate by a NextIteration, then we cannot add it into the queue
                             can_add = False
                             break
                             
@@ -242,8 +243,9 @@ class Graph:
                 compare_node_name = self.graph_backward[0][son][0]
                 compare_node = self.node_by_name[compare_node_name]
                 branch_node_name = [self.graph_backward[0][son][i] for i in range(1, 3)]
+                branch_value = [self.node_output[branch_node_name[i - 1]].index_of(self.edge_index[son][i]).value for i in range(1, 3)]
                 branch_array = [self.node_output[branch_node_name[i - 1]].index_of(self.edge_index[son][i]).array for i in range(1, 3)]
-                if compare_node.op in ["GreaterEqual", "Greater", "LessEqual", "Less"]:
+                if compare_node.op in ["GreaterEqual", "Greater", "LessEqual", "Less", "Equal", "NotEqual"]:
                     args = self.graph_backward[0][compare_node_name][:2] # args --> compare_node_name --> son
                     at_least_one = 0
                     for i in range(2):
@@ -252,7 +254,20 @@ class Graph:
                             args[i] = range_arg.left
                             at_least_one += 1
                     if at_least_one == 2: # if all const, then it is determined
-                        raise NotImplementedError
+                        if compare_node.op == "GreaterEqual":
+                            temp = branch_value[0] if args[0] >= args[1] else branch_value[1]
+                        elif compare_node.op == "Greater":
+                            temp = branch_value[0] if args[0] > args[1] else branch_value[1]
+                        elif compare_node.op == "LessEqual":
+                            temp = branch_value[0] if args[0] <= args[1] else branch_value[1]
+                        elif compare_node.op == "Less":
+                            temp = branch_value[0] if args[0] < args[1] else branch_value[1]
+                        elif compare_node.op == "Equal":
+                            temp = branch_value[0] if args[0] == args[1] else branch_value[1]
+                        elif compare_node.op == "NotEqual":
+                            temp = branch_value[0] if args[0] != args[1] else branch_value[1]
+                        else:
+                            raise NotImplementedError
                     elif at_least_one == 1:
                         single_value_arrays = True
                         array = None
@@ -294,11 +309,14 @@ class Graph:
                                     if values[-1] is None:
                                         return None
                                 return Range(left=min(values[0].left, values[1].left), right=max(values[0].right, values[1].right))
-
-                            if isinstance(args[1], str):
-                                temp_ret = compute("Less" if compare_node.op in ["GreaterEqual", "Greater"] else "Greater", args[0])
+                            
+                            if compare_node.op in ["GreaterEqual", "Greater", "LessEqual", "Less"]:
+                                if isinstance(args[1], str):
+                                    temp_ret = compute("Less" if compare_node.op in ["GreaterEqual", "Greater"] else "Greater", args[0])
+                                else:
+                                    temp_ret = compute(compare_node.op, args[1])
                             else:
-                                temp_ret = compute(compare_node.op, args[1])
+                                raise NotImplementedError
 
                             if temp_ret is not None:
                                 temp = temp_ret
@@ -534,15 +552,7 @@ class Graph:
             if self.node_by_name[op].op.lower() in ["variablev2", "variable", "varhandleop"]:
                 u = self.node_output[op].size
                 if self.node_by_name[op].op.lower() == "varhandleop":
-                    s = str(self.node_by_name[op].attr["shape"].shape)
-                    x = 0
-                    u = []
-                    for i in range(len(s)):
-                        if s[i] >= '0' and s[i] <= '9':
-                            x = x * 10 + ord(s[i]) - 48
-                        elif x != 0:
-                            u.append(x)
-                            x = 0
+                    u = shape_from_proto(self.node_by_name[op].attr["shape"].shape)
 
                 tmp = 1
                 if str(u) == '<unknown>':

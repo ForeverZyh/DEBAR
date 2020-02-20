@@ -25,15 +25,11 @@ def iteratorv2(node):
 def variablev2(node):
     attrs = node.attr
     dtype = attrs["dtype"].type
-    # value = Range(name="variablev2", dtype=dtype)
-    # return value, value.left <= value.right
-    # return value, z3.And([value.left <= value.right, value.left >= -1, value.right <= 1])
-    # return value, z3.And([value.left == -1, value.right == 1])
-    if dtype in [1]:
+    shape = attrs["dtype"].shape
+    if dtype in [1, 2, 19] and len(shape_from_proto(shape)) > 0:
         return Range(left=-1, right=1)
     else:
-        print(node.name + " unknwon!")
-        return Range(left=1, right=100)
+        return placeholder(node)
 
 
 def oneshotiterator(node):
