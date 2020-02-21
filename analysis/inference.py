@@ -68,6 +68,19 @@ def safepow(X, Y):
 
 class InferValue:
     @staticmethod
+    def abs(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            left_sq = np.abs(args[0].value.left)
+            right_sq = np.abs(args[0].value.right)
+            min_sq = min(left_sq, right_sq)
+            max_sq = max(left_sq, right_sq)
+            cond = args[0].value.left <= 0 and args[0].value.right >= 0
+            return Range(left=0 if cond else min_sq, right=max_sq)
+        else:
+            return np.abs(args[0].value)
+        
+    @staticmethod
     def add(args: list, node):
         assert len(args) == 2
         if args[0].value is None or args[1].value is None:
@@ -824,12 +837,8 @@ class InferValue:
     def square(args: list, node):
         assert len(args) == 1
         if isinstance(args[0].value, Range):
-            left_sq = args[0].value.left * args[0].value.left
-            right_sq = args[0].value.right * args[0].value.right
-            min_sq = min(left_sq, right_sq)
-            max_sq = max(left_sq, right_sq)
-            cond = args[0].value.left <= 0 and args[0].value.right >= 0
-            return Range(left=0 if cond else min_sq, right=max_sq)
+            abs_value = InferValue.abs(args, node)
+            return Range(left=abs_value.left * abs_value.left, right=abs_value.right * abs_value.right)
         else:
             return args[0].value * args[0].value
 
@@ -880,7 +889,8 @@ class InferValue:
                 else:
                     return t
         else:
-            return np.sum(args[0].value, axis=tuple(np.int32(args[1].value)))
+            axises = np.int32(args[1].value)
+            return np.sum(args[0].value, axis=tuple(axises) if len(axises.shape) > 0 else axises)
 
     @staticmethod
     def switch(args: list, node):
