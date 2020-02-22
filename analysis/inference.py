@@ -60,6 +60,20 @@ def safeexp(X):
     except:
         return min(math.exp(min(X, UPPER_BOUND)), OVERFLOW_LIMIT)
     
+def safesqrt(X):
+    try:
+        ans = []
+        for x in X:
+            if x < 0:
+                ans.append(0)
+            else:
+                ans.append(math.sqrt(x))
+        return np.array(ans)
+    except:
+        if X < 0:
+            return 0
+        else:
+            return math.sqrt(X)
     
 def safepow(X, Y):
     UPPER_BOUND = 100
@@ -736,9 +750,15 @@ class InferValue:
     @staticmethod
     def range(args: list, node):
         assert len(args) == 3
-        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range) or isinstance(args[2].value, Range):
-            left = args[0].value.left if isinstance(args[0].value, Range) else int(args[0].value)
-            right = args[1].value.right if isinstance(args[1].value, Range) else int(args[1].value)
+        all_single_np = True
+        for arg in args:
+            if isinstance(arg.value, Range) or len(arg.value.shape) > 0:
+                all_single_np = False
+                break
+                
+        if not all_single_np:
+            left = args[0].value.left if isinstance(args[0].value, Range) else np.min(args[0].value)
+            right = args[1].value.right if isinstance(args[1].value, Range) else np.max(args[1].value)
             return Range(left=left, right=right)
         else:
             return np.arange(args[0].value, args[1].value, args[2].value)
@@ -824,11 +844,11 @@ class InferValue:
     def rsqrt(args: list, node):
         assert len(args) == 1
         if isinstance(args[0].value, Range):
-            left = math.sqrt(args[0].value.left)
-            right = math.sqrt(args[0].value.right)
+            left = safesqrt(args[0].value.left)
+            right = safesqrt(args[0].value.right)
             return Range(left=1 / right, right=1 / left)
         else:
-            return 1 / math.sqrt(args[0].value)
+            return 1 / safesqrt(args[0].value)
 
     @staticmethod
     def select(args: list, node):
@@ -887,12 +907,12 @@ class InferValue:
     def sqrt(args: list, node):
         assert len(args) == 1
         if isinstance(args[0].value, Range):
-            left = math.sqrt(args[0].value.left)
-            right = math.sqrt(args[0].value.right)
+            left = safesqrt(args[0].value.left)
+            right = safesqrt(args[0].value.right)
 
             return Range(left=left, right=right)
         else:
-            return np.sqrt(args[0].value)
+            return safesqrt(args[0].value)
 
     @staticmethod
     def square(args: list, node):

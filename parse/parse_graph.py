@@ -342,7 +342,7 @@ class Graph:
                     pass
 
         self.node_output[son].value = temp
-
+        
         if temp_array is not None and isinstance(temp, Range):
             self.node_output[son].array = temp_array
             if isinstance(temp_array, list):
@@ -393,7 +393,7 @@ class Graph:
                 pass
 
         if not pre_check:
-            raise AttributeError
+            return "ni"
             
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
