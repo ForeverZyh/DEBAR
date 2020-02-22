@@ -214,7 +214,6 @@ class Graph:
         for (i, in_node_name) in enumerate(self.graph_backward[0][son]): # only care about non_control edges
             if in_node_name not in self.node_visited:
                 # there is a loop, and the node is "Merge"
-                print(self.node_by_name[in_node_name].op)
                 assert self.node_by_name[in_node_name].op == "NextIteration"
                 self.node_visited.add(in_node_name)
                 self.node_output[in_node_name].value = dumy()
@@ -323,6 +322,8 @@ class Graph:
 
             if turn_on_array:
                 try:
+                    for parents_ap in parents_aps:
+                        assert parents_ap.array.index_slices is not None
                     temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
                     flag = True
                     if isinstance(self.node_output[son].dtype, list):
@@ -543,7 +544,9 @@ class Graph:
 
             left.append(left_ele)
             right.append(right_ele)
-
+        
+        if len(left) == 0 or len(right) == 0:
+            return None
         return Range(left=min(left), right=max(right))
 
     def get_info(self):
