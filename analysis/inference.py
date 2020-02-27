@@ -752,7 +752,7 @@ class InferValue:
         assert len(args) == 3
         all_single_np = True
         for arg in args:
-            if isinstance(arg.value, Range) or len(arg.value.shape) > 0:
+            if isinstance(arg.value, Range) or len(np.array(arg.value).shape) > 0:
                 all_single_np = False
                 break
                 

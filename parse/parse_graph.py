@@ -241,49 +241,71 @@ class Graph:
             if u.op == "Select": # special treatment for Select
                 compare_node_name = self.graph_backward[0][son][0]
                 compare_node = self.node_by_name[compare_node_name]
-                branch_node_name = [self.graph_backward[0][son][i] for i in range(1, 3)]
+                branch_node_name = self.graph_backward[0][son][1:]
                 branch_value = [self.node_output[branch_node_name[i - 1]].index_of(self.edge_index[son][i]).value for i in range(1, 3)]
                 branch_array = [self.node_output[branch_node_name[i - 1]].index_of(self.edge_index[son][i]).array for i in range(1, 3)]
                 if compare_node.op in ["GreaterEqual", "Greater", "LessEqual", "Less", "Equal", "NotEqual"]:
-                    args = self.graph_backward[0][compare_node_name][:2] # args --> compare_node_name --> son
-                    at_least_one = 0
-                    for i in range(2):
-                        range_arg = identity([self.node_output[args[i]].index_of(self.edge_index[compare_node_name][i])])
-                        if range_arg.single(): # if only one ele in the interval
-                            args[i] = range_arg.left
-                            at_least_one += 1
-                    if at_least_one == 2: # if all const, then it is determined
+                    args = self.graph_backward[0][compare_node_name] # args --> compare_node_name --> son
+                    range_args = [identity([self.node_output[args[i]].index_of(self.edge_index[compare_node_name][i])]) for i in range(2)]
+                    
+                    def can_determine():
                         if compare_node.op == "GreaterEqual":
-                            temp = branch_value[0] if args[0] >= args[1] else branch_value[1]
+                            if range_args[0].left >= range_args[1].right:
+                                return branch_value[0]
+                            elif range_args[0].right < range_args[1].left:
+                                return branch_value[1]
                         elif compare_node.op == "Greater":
-                            temp = branch_value[0] if args[0] > args[1] else branch_value[1]
+                            if range_args[0].left > range_args[1].right:
+                                return branch_value[0]
+                            elif range_args[0].right <= range_args[1].left:
+                                return branch_value[1]
                         elif compare_node.op == "LessEqual":
-                            temp = branch_value[0] if args[0] <= args[1] else branch_value[1]
+                            if range_args[0].right <= range_args[1].left:
+                                return branch_value[0]
+                            elif range_args[0].left > range_args[1].right:
+                                return branch_value[1]
                         elif compare_node.op == "Less":
-                            temp = branch_value[0] if args[0] < args[1] else branch_value[1]
+                            if range_args[0].right < range_args[1].left:
+                                return branch_value[0]
+                            elif range_args[0].left >= range_args[1].right:
+                                return branch_value[1]
                         elif compare_node.op == "Equal":
-                            temp = branch_value[0] if args[0] == args[1] else branch_value[1]
+                            if range_args[0].single() and range_args[1].single() and range_args[1].left == range_args[0].left:
+                                return branch_value[0]
+                            elif range_args[0].left > range_args[1].right or range_args[0].right < range_args[1].left:
+                                return branch_value[1]
                         elif compare_node.op == "NotEqual":
-                            temp = branch_value[0] if args[0] != args[1] else branch_value[1]
+                            if range_args[0].single() and range_args[1].single() and range_args[1].left == range_args[0].left:
+                                return branch_value[1]
+                            elif range_args[0].left > range_args[1].right or range_args[0].right < range_args[1].left:
+                                return branch_value[0]
                         else:
                             raise NotImplementedError
-                    elif at_least_one == 1:
-                        single_value_arrays = True
+                        return None
+                    
+                    temp_ret = can_determine()
+                    if temp_ret is not None:
+                        temp = temp_ret
+                    else: # cannot determine, we require one to be single_value_arrays. If two, we choose the first one
+                        single_value_array_id = None
                         array = None
                         for i in range(2):
-                            if isinstance(args[i], str): # this is not the const
-                                array = self.node_output[args[i]].index_of(self.edge_index[compare_node_name][i]).array
-                                for key in array.block_to_symbol:
-                                    group = array.block_to_symbol[key]
-                                    if len(group.value) > 1:
-                                        single_value_array = False
-                                        break
-                                    key = list(group.value.keys())[0]
-                                    if key[:len(magic)] == magic: # we don't consider relu
-                                        single_value_array = False
-                                        break
+                            array = self.node_output[args[i]].index_of(self.edge_index[compare_node_name][i]).array
+                            single_value_array = True
+                            for key in array.block_to_symbol:
+                                group = array.block_to_symbol[key]
+                                if len(group.value) > 1:
+                                    single_value_array = False
+                                    break
+                                key = list(group.value.keys())[0]
+                                if key[:len(magic)] == magic: # we don't consider relu
+                                    single_value_array = False
+                                    break
+                            if single_value_array:
+                                single_value_array_id = i
+                                break
 
-                        if single_value_arrays:
+                        if single_value_array_id is not None:
                             def compute(op, c):
                                 values = []
                                 for arg_id_select in range(2):
@@ -296,13 +318,42 @@ class Graph:
                                                 if factor == 0:
                                                     continue
                                                 value = self.get_value(name)
-                                                rhs = c / factor
+                                                rhs = c * (1 / factor)
+                                                if factor < 0:
+                                                    rhs = Range(left=rhs.right, right=rhs.left)
                                                 if (factor > 0) ^ (op in ["GreaterEqual", "Greater"]) ^ (arg_id_select == 0):
                                                     # value >= rhs
-                                                    override_dict[(name, position)] = Range(left=max(value.left, rhs), right=max(value.right, rhs))
+                                                    override_dict[(name, position)] = Range(left=max(value.left, rhs.left), right=max(value.right, rhs.left))
                                                 else:
                                                     # value <= rhs
-                                                    override_dict[(name, position)] = Range(left=min(value.left, rhs), right=min(value.right, rhs))
+                                                    override_dict[(name, position)] = Range(left=min(value.left, rhs.right), right=min(value.right, rhs.right))
+
+                                    values.append(self.get_left_right(branch_array[arg_id_select].block_to_symbol, branch_node_name[arg_id_select], override_dict))
+                                    if values[-1] is None:
+                                        return None
+                                return Range(left=min(values[0].left, values[1].left), right=max(values[0].right, values[1].right))
+                            
+                            def compute_equal(op, c):
+                                values = []
+                                for arg_id_select in range(2):
+                                    override_dict = {}
+                                    for key in array.block_to_symbol:
+                                        group = array.block_to_symbol[key]
+                                        if len(group.value) == 1:
+                                            for (name, position) in group.value:
+                                                factor = group.value[(name, position)]
+                                                if factor == 0:
+                                                    continue
+                                                value = self.get_value(name)
+                                                rhs = c * (1 / factor)
+                                                if factor < 0:
+                                                    rhs = Range(left=rhs.right, right=rhs.left)
+                                                if (op == "NotEqual") ^ (arg_id_select == 0):
+                                                    # value == rhs
+                                                    override_dict[(name, position)] = Range(left=max(value.left, rhs.left), right=min(value.right, rhs.right))
+                                                else:
+                                                    # value != rhs
+                                                    pass
 
                                     values.append(self.get_left_right(branch_array[arg_id_select].block_to_symbol, branch_node_name[arg_id_select], override_dict))
                                     if values[-1] is None:
@@ -310,12 +361,15 @@ class Graph:
                                 return Range(left=min(values[0].left, values[1].left), right=max(values[0].right, values[1].right))
                             
                             if compare_node.op in ["GreaterEqual", "Greater", "LessEqual", "Less"]:
-                                if isinstance(args[1], str):
-                                    temp_ret = compute("Less" if compare_node.op in ["GreaterEqual", "Greater"] else "Greater", args[0])
+                                if single_value_array_id == 1:
+                                    temp_ret = compute("Less" if compare_node.op in ["GreaterEqual", "Greater"] else "Greater", range_args[0])
                                 else:
-                                    temp_ret = compute(compare_node.op, args[1])
+                                    temp_ret = compute(compare_node.op, range_args[1])
                             else:
-                                raise NotImplementedError
+                                if single_value_array_id == 1:
+                                    temp_ret = compute_equal(compare_node.op, range_args[0])
+                                else:
+                                    temp_ret = compute_equal(compare_node.op, range_args[1])
 
                             if temp_ret is not None:
                                 temp = temp_ret
@@ -422,8 +476,7 @@ class Graph:
                         if factor != 0:
                             if name[:len(magic)] == magic:
                                 range_to_split_local.add(name[len(magic):])
-                            else:
-                                range_to_split_local.add(name)
+                                
                 if non_self:
                     range_to_split.update(range_to_split_local)
         

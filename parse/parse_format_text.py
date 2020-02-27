@@ -8,7 +8,8 @@ import z3
 from utils import *
 
 placeholder_map = {}
-
+unbounded_weight = False
+unbounded_input = False
 
 def const(node):
     attrs = node.attr
@@ -23,13 +24,15 @@ def iteratorv2(node):
 
 
 def variablev2(node):
+    if unbounded_weight:
+        return Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT)
     attrs = node.attr
     dtype = attrs["dtype"].type
     shape = attrs["shape"].shape
     if dtype in [1, 2, 19] and len(shape_from_proto(shape)) > 0:
         return Range(left=-1, right=1)
     else:
-        return placeholder(node)
+        return placeholder(node, True) # if the weight=True, it will not return dumy() even if unbounded_input = True
 
 
 def oneshotiterator(node):
@@ -37,6 +40,8 @@ def oneshotiterator(node):
         return placeholder_map[node.name]
     attrs = node.attr
     dtypes = attrs["output_types"].list.type
+    if unbounded_input:
+        return [Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT) for _ in range(dtypes)]
     value = []
     print(node)
     while True:
@@ -66,7 +71,9 @@ def oneshotiterator(node):
     return placeholder_map[node.name]
 
 
-def placeholder(node):
+def placeholder(node, weight=False):
+    if unbounded_input and not weight:
+        return Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT)
     if node.name in placeholder_map:
         return placeholder_map[node.name]
     attrs = node.attr

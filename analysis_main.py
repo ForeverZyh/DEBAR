@@ -1,4 +1,5 @@
 from parse.parse_graph import Graph
+import parse.parse_format_text
 import z3
 from solver import Range, meet
 from utils import OVERFLOW_LIMIT, UNDERFLOW_LIMIT
@@ -8,15 +9,21 @@ import sys
 
 sys.setrecursionlimit(100000)
 try:
-    assert len(sys.argv) == 2
+    assert len(sys.argv) >= 2 and len(sys.argv) <= 3
     pbtxt = sys.argv[1]
+    if len(sys.argv) == 3:
+        assert sys.argv[2] in ["unbounded_weight", "unbounded_input"]
+        if sys.argv[2] == "unbounded_weight":
+            parse.parse_format_text.unbounded_weight = True
+        else:
+            parse.parse_format_text.unbounded_input = True
+            
 except:
     print(
         "Please run 'python test_script PBTEXT_FILENAME'.\nAborted...")
     exit(1)
 
 rule = ["Log", "Exp", "RealDiv", "Sqrt", "Rsqrt", "Expm1", "Log1p", "Reciprocal"]
-split_num = 2
 range_to_split_len_limit = 10
 # rule = ["RealDiv"]
 if __name__ == "__main__":
@@ -47,7 +54,7 @@ if __name__ == "__main__":
             cnt_all += 1
             print(suspected_node.op, suspected_node.name)
             print("sat")
-            cnt_sat += 1
+            cnt_unknown += 1
             continue
 
         if suspected_node.op in ["Exp", "Expm1"]:
@@ -95,8 +102,8 @@ if __name__ == "__main__":
             else:
                 range_to_split, nodes_interested = ret
                 range_to_split = list(range_to_split)
-                if len(range_to_split) > range_to_split_len_limit:
-                    return False
+#                 if len(range_to_split) > range_to_split_len_limit:
+#                     return False
                 for name in range_to_split:
                     override_dict = {}
                     # if the name has |, we have to remove it to get the name in the graph
@@ -106,16 +113,17 @@ if __name__ == "__main__":
                     else:
                         changed.add(name)
                     value = graph.get_value(name)
-                    span = value.right - value.left
-                    is_span_valid = True
-                    for segment_id in range(split_num):
-                        override_dict[name] = Range(left=value.left + segment_id * span / split_num,right=value.left + (segment_id + 1) * span / split_num)
-                        node_out = graph.reevaluate(nodes_interested, backward_analysis_const_start, changed, override_dict)
-                        if not is_valid(node_out.index_of(index).value):
-                            is_span_valid = False
-                            break
-                    if is_span_valid:
-                        return True
+                    if value.left < 0 and value.right > 0:
+                        spans = [Range(left=value.left, right=0), Range(left=0, right=value.right)]
+                        is_span_valid = True
+                        for span in spans:
+                            override_dict[name] = span
+                            node_out = graph.reevaluate(nodes_interested, backward_analysis_const_start, changed, override_dict)
+                            if not is_valid(node_out.index_of(index).value):
+                                is_span_valid = False
+                                break
+                        if is_span_valid:
+                            return True
                 
                 return False
                 
@@ -127,5 +135,5 @@ if __name__ == "__main__":
         else:
             cnt_unsat += 1
         cnt_all += 1
-    print("all: ", cnt_all, "sat: ", cnt_sat, "unsat: ", cnt_unsat, "unknown: ", cnt_unknown)
+    print("all: ", cnt_all, "sat: ", cnt_sat, "unsat: ", cnt_unsat, "unknown because of API: ", cnt_unknown)
     print(graph.get_info())
