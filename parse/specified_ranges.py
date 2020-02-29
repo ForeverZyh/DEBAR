@@ -1,4 +1,6 @@
 class SpecifiedRanges:
+    models = ["ssd_mobile_net_v1", "ssd_inception_v2", "ssd_mobile_net_v2", "faster_rcnn_resnet_50", "deep_speech", "deeplab", "vae", "attention_ocr", "textsum", "shake_shake_32", "shake_shake_96", "shake_shake_112", "pyramid_net", "sbn", "sbnrebar", "sbndynamicrebar", "sbngumbel", "audioset", "learning_to_remember_rare_events", "neural_gpu1", "neural_gpu2", "ptn", "namignizer", "feelvos", "fivo_srnn", "fivo_vrnn", "deep_contextual_bandits_var_bnn", "deep_contextual_bandits_neural_ban", "deep_contextual_bandits_bb_alpha_nn", "deep_contextual_bandits_rms_bnn", "adversarial_crypto", "sentiment_analysis", "next_frame_prediction", "minigo", "compression_entropy_coder", "lfads", "lm_1b"]
+    
     # a dictionary with key = "filename", and value with another dictionary {"variable_name" -> ranges}
     specified_ranges = {
         "ssd_mobile_net_v1": {"IteratorV2": [[0,None],[-1,1],[None,None],[1,None],[None,None],[0,299],[0,1],[0,1],[None,None],[False,True],[0,1],[1,100]]},
