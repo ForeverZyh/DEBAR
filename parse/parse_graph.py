@@ -160,7 +160,7 @@ class Graph:
 
             if len(nodes_in_main_clique) == 0:
                 break
-                
+            
             min_ind = None
             for node_name in nodes_in_main_clique:
                 if self.node_by_name[node_name].op == "Merge":

@@ -832,7 +832,7 @@ class InferValue:
     
     @staticmethod
     def resourcegather(args: list, node):
-        assert len(args) == 3
+        assert len(args) == 2
         return identity(args, node)
 
     @staticmethod
@@ -846,7 +846,10 @@ class InferValue:
         if isinstance(args[0].value, Range):
             left = safesqrt(args[0].value.left)
             right = safesqrt(args[0].value.right)
-            return Range(left=1 / right, right=1 / left)
+            if left == 0 or right == 0:
+                return dumy()
+            else:
+                return Range(left=1 / right, right=1 / left)
         else:
             return 1 / safesqrt(args[0].value)
 

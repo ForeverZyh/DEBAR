@@ -1,36 +1,40 @@
 from parse.parse_graph import Graph
 import parse.parse_format_text
+from parse.specified_ranges import SpecifiedRanges
+
 import z3
 from solver import Range, meet
 from utils import OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 import math
 import sys
+import os
 
 
-sys.setrecursionlimit(100000)
-try:
-    assert len(sys.argv) >= 2 and len(sys.argv) <= 3
-    pbtxt = sys.argv[1]
-    if len(sys.argv) == 3:
-        assert sys.argv[2] in ["unbounded_weight", "unbounded_input"]
-        if sys.argv[2] == "unbounded_weight":
-            parse.parse_format_text.unbounded_weight = True
-        else:
-            parse.parse_format_text.unbounded_input = True
-            
-except:
-    print(
-        "Please run 'python test_script PBTEXT_FILENAME'.\nAborted...")
-    exit(1)
-
-rule = ["Log", "Exp", "RealDiv", "Sqrt", "Rsqrt", "Expm1", "Log1p", "Reciprocal"]
-range_to_split_len_limit = 10
-# rule = ["RealDiv"]
 if __name__ == "__main__":
+    sys.setrecursionlimit(100000)
+    try:
+        assert len(sys.argv) >= 2 and len(sys.argv) <= 3
+        pbtxt = sys.argv[1]
+        assert pbtxt[-6:] == ".pbtxt"
+        if len(sys.argv) == 3:
+            assert sys.argv[2] in ["unbounded_weight", "unbounded_input"]
+            if sys.argv[2] == "unbounded_weight":
+                parse.parse_format_text.unbounded_weight = True
+            else:
+                parse.parse_format_text.unbounded_input = True
+
+    except:
+        print(
+            "Please run 'python test_script PBTEXT_FILENAME'.\nAborted...")
+        exit(1)
+
+    rule = ["Log", "Exp", "RealDiv", "Sqrt", "Rsqrt", "Expm1", "Log1p", "Reciprocal"]
+    
+    network_name = os.path.basename(pbtxt)[:-6]
+    if network_name in SpecifiedRanges.specified_ranges:
+        SpecifiedRanges.ranges_looking_up = SpecifiedRanges.specified_ranges[network_name]
+        
     graph = Graph(pbtxt, "verbose.txt")
-    # graph.backward_slice("Log", set())
-    # graph.draw(graph.backward_slice("SpatialTransformer/_transform/_interpolate/truediv", set()), "interested1")
-    # graph.draw(graph.nodes_in_main_clique_topology, "show_real")
     suspected_nodes = []
     for node in graph.graph_def.node:
         if node.op in rule and graph.f.find(node.name) == graph.main_clique:
@@ -53,7 +57,7 @@ if __name__ == "__main__":
         elif ret == "ni":
             cnt_all += 1
             print(suspected_node.op, suspected_node.name)
-            print("sat")
+            print("unknown")
             cnt_unknown += 1
             continue
 
@@ -102,8 +106,6 @@ if __name__ == "__main__":
             else:
                 range_to_split, nodes_interested = ret
                 range_to_split = list(range_to_split)
-#                 if len(range_to_split) > range_to_split_len_limit:
-#                     return False
                 for name in range_to_split:
                     override_dict = {}
                     # if the name has |, we have to remove it to get the name in the graph
