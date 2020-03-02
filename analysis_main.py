@@ -124,6 +124,7 @@ if __name__ == "__main__":
                             if not is_valid(node_out.index_of(index).value):
                                 is_span_valid = False
                                 break
+                                
                         if is_span_valid:
                             return True
                 
@@ -134,6 +135,7 @@ if __name__ == "__main__":
             print(suspected_node.op, suspected_node.name)
             print("sat")
             cnt_sat += 1
+#             if cnt_sat == 1: exit(0)
         else:
             cnt_unsat += 1
         cnt_all += 1

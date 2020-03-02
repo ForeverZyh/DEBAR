@@ -11,7 +11,7 @@ from utils import resolve_type
 from itertools import combinations_with_replacement, product
 
 turn_on_bool = False
-
+length_unknown = 1e3
 
 def real_size(a, b):
     if str(a) == "?" and str(b) == "?":
@@ -37,7 +37,7 @@ def packtorange(args, node):
         if isinstance(arg.value, Range):
             maxs.append(arg.value.right)
             mins.append(arg.value.left)
-        elif len(arg.value.shape) > 0 and arg.value.shape[0]> 0:
+        elif arg.value.size > 0:
             maxs.append(resolve_type(np.max(arg.value)))
             mins.append(resolve_type(np.min(arg.value)))
             
@@ -80,10 +80,16 @@ def safepow(X, Y):
     try:
         ans = []
         for (x, y) in zip(X, Y):
-            ans.append(min(math.pow(x, y), OVERFLOW_LIMIT))
+            try:
+                ans.append(min(math.pow(x, y), OVERFLOW_LIMIT))
+            except:
+                ans.append(OVERFLOW_LIMIT)
         return np.array(ans)
     except:
-        return min(math.pow(X, Y), OVERFLOW_LIMIT)
+        try:
+            return min(math.pow(X, Y), OVERFLOW_LIMIT)
+        except:
+            return OVERFLOW_LIMIT
     
 def safelgamma(X):
     try:
@@ -181,7 +187,7 @@ class InferValue:
         try:
             return Range(left=0, right=int(args[0].size[int(args[1].value)]) - 1)
         except:
-            return Range(left=0, right=OVERFLOW_LIMIT)
+            return Range(left=0, right=length_unknown)
 
     @staticmethod
     def assign(args: list, node):
@@ -193,19 +199,21 @@ class InferValue:
 
     def assignadd(args: list, node):
         y = identity([args[1]], node)
-        if y.left == 0:
-            args[0].value.left = 0
-        elif y.left < 0:
-            args[0].value.left = -OVERFLOW_LIMIT
-        else:
-            args[0].value.left = y.left
-        if y.right == 0:
-            args[0].value.right = 0
-        elif y.right > 0:
-            args[0].value.right = OVERFLOW_LIMIT
-        else:
-            args[0].value.right = y.right
-        return args[0].value
+        tmp = dumy()
+        if y.left >= 0:
+            tmp.left = args[0].value.left
+        if y.right <= 0:
+            tmp.right = args[0].value.right
+        return tmp
+    
+    def assignsub(args: list, node):
+        y = identity([args[1]], node)
+        tmp = dumy()
+        if y.left <= 0:
+            tmp.left = args[0].value.left
+        if y.right >= 0:
+            tmp.right = args[0].value.right
+        return tmp
 
     @staticmethod
     def avgpool(args: list, node):
@@ -220,6 +228,16 @@ class InferValue:
         x.size = x.size[1:]
         y.size = y.size[1:]
         return InferValue.matmul([x, y], node)
+    
+    @staticmethod
+    def batchtospacend(args: list, node):
+        assert len(args) == 3
+        return args[0].value
+    
+    @staticmethod
+    def spacetobatchnd(args: list, node):
+        assert len(args) == 3
+        return args[0].value
 
     @staticmethod
     def biasadd(args: list, node):
@@ -237,11 +255,12 @@ class InferValue:
     @staticmethod
     def cast(args: list, node):
         # tf.int64: 9; tf.int32: 3; tf.int16: 5; tf.int8: 6; 
+        # tf.uint64: 23; tf.uint32: 22; tf.uint16: 17; tf.uint8: 4; 
         # tf.float64 2; tf.float32: 1; tf.float16: 19; 
         # tf.bool: 10; 
         assert len(args) == 1
         bool_proto = [10]
-        int_proto = [9, 3, 5, 6]
+        int_proto = [9, 3, 5, 6] + [23, 22, 17, 4]
         float_proto = [2, 1, 19]
         attrs = node.attr
         if int(attrs['SrcT'].type) in bool_proto and int(attrs['DstT'].type) in int_proto + float_proto:
@@ -263,6 +282,10 @@ class InferValue:
     def checknumerics(args: list, node):
         assert len(args) == 1
         return args[0].value
+    
+    @staticmethod
+    def cholesky(args: list, node):
+        return dumy()
 
     @staticmethod
     def clipbyvalue(args: list, node):
@@ -305,6 +328,11 @@ class InferValue:
         ends = [x.left * y.left * ind, x.left * y.right * ind,
                 x.right * y.left * ind, x.right * y.right * ind]
         return Range(left=min(ends), right=max(ends))
+    
+    @staticmethod
+    def conv2dbackpropinput(args: list, node):
+        return Range(left=-1,right=1)
+        return getattr(parse_format_text, "variablev2")(node)
 
     @staticmethod
     def depthwiseconv2dnative(args: list, node):
@@ -315,6 +343,12 @@ class InferValue:
         ends = [args[0].value.left * args[1].value.left * ind, args[0].value.left * args[1].value.right * ind,
                 args[0].value.right * args[1].value.left * ind, args[0].value.right * args[1].value.right * ind]
         return Range(left=min(ends), right=max(ends))
+    
+    @staticmethod
+    def diag(args: list, node):
+        assert len(args) == 1
+        tmp = packtorange(args, node)
+        return Range(left=min(0, tmp.left), right=max(0, tmp.right))
 
     @staticmethod
     def dynamicstitch(args: list, node):
@@ -351,6 +385,10 @@ class InferValue:
             return np.expand_dims(args[0].value, axis=np.int32(args[1].value))
         else:
             return identity(args, node)
+        
+    @staticmethod
+    def fifoqueuev2(args: list, node):
+        return InferValue.randomshufflequeuev2(args, node)
 
     @staticmethod
     def fill(args: list, node):
@@ -457,6 +495,20 @@ class InferValue:
         return getattr(parse_format_text, node.op.lower())(node)
     
     @staticmethod
+    def leakyrelu(args: list, node):
+        assert len(args) == 1
+        alpha = node.attr["alpha"].f
+        def leaky_relu(x):
+            if x >=0:
+                return x
+            else:
+                return alpha * x
+        if isinstance(args[0].value, Range):
+            return Range(left=leaky_relu(args[0].value.left), right=leaky_relu(args[0].value.right))
+        else:
+            return leaky_relu(args[0].value)
+    
+    @staticmethod
     def l2loss(args: list, node):
         assert len(args) == 1
         return InferValue.square(args, node) * 0.5
@@ -485,7 +537,10 @@ class InferValue:
     @staticmethod
     def linspace(args: list, node):
         assert len(args) == 3
-        return np.linspace(args[0].value, args[1].value, args[2].value)
+        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range) or isinstance(args[2].value, Range):
+            return packtorange(args[:-1], node)
+        else:
+            return np.linspace(args[0].value, args[1].value, args[2].value)
 
     @staticmethod
     def logicaland(args: list, node):
@@ -558,6 +613,24 @@ class InferValue:
             y = identity([args[1]], node)
             ends = [x.left * y.left * ind, x.left * y.right * ind, x.right * y.left * ind, x.right * y.right * ind]
             return Range(left=min(ends), right=max(ends))
+        
+    @staticmethod
+    def matrixdiag(args: list, node):
+        assert len(args) == 1
+        tmp = packtorange(args, node)
+        return Range(left=min(0, tmp.left), right=max(0, tmp.right))
+        
+        
+    @staticmethod
+    def matrixbandpart(args: list, node):
+        assert len(args) == 3
+        tmp = packtorange(args[:1], node)
+        return Range(left=min(tmp.left, 0), right=max(tmp.right, 0))
+    
+    @staticmethod
+    def matrixdiagpart(args: list, node):
+        assert len(args) == 1
+        return args[0].value
 
     @staticmethod
     def max(args: list, node):
@@ -651,7 +724,7 @@ class InferValue:
             ind = int(args[1].size[0])
             return Range(left=0, right=ind - 1)
         except:
-            return Range(left=0, right=OVERFLOW_LIMIT)
+            return Range(left=0, right=length_unknown)
 
     @staticmethod
     def notequal(args: list, node):
@@ -690,7 +763,12 @@ class InferValue:
     @staticmethod
     def paddingfifoqueuev2(args: list, node):
         return InferValue.randomshufflequeuev2(args, node)
-
+    
+    @staticmethod
+    def parsesingleexample(args: list, node):
+        assert len(args) == 3
+        return [Range(left=0, right=length_unknown) for _ in range(20)]
+        
     @staticmethod
     def placeholder(args: list, node):
         assert len(args) == 0
@@ -720,7 +798,22 @@ class InferValue:
     @staticmethod
     def prod(args: list, node):
         assert len(args) == 2
-        return InferValue.mul(args, node)
+        if args[0].value is None:
+            return None
+        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range):
+            try:
+                ind = int(args[0].size[int(args[1].value)])
+                return Range(left=safepow(args[0].value.left, ind), right=safepow(args[0].value.right, ind))
+            except:
+                ind = Range(left=0, right=length_unknown)
+                t = InferValue.pow([args[0], AbstractInterpretation(value=ind, dtype=3, size=[])], node)
+                if isinstance(t, tuple):
+                    raise AssertionError
+                else:
+                    return t
+        else:
+            axises = np.int32(args[1].value)
+            return np.prod(args[0].value, axis=tuple(axises) if len(axises.shape) > 0 else axises)
 
     @staticmethod
     def queuedequeuemanyv2(args: list, node):
@@ -735,7 +828,7 @@ class InferValue:
     @staticmethod
     def randomshufflequeuev2(args: list, node):
         assert len(args) == 0
-        return getattr(parse_format_text, "placeholder")(node)
+        return getattr(parse_format_text, "oneshotiterator")(node)
 
     @staticmethod
     def randomstandardnormal(args: list, node):
@@ -770,7 +863,7 @@ class InferValue:
         try:
             return int(args[0].size)
         except:
-            return Range(left=1, right=OVERFLOW_LIMIT)
+            return Range(left=1, right=length_unknown)
 
     @staticmethod
     def readvariableop(args: list, node):
@@ -820,13 +913,23 @@ class InferValue:
     @staticmethod
     def reshape(args: list, node):
         assert len(args) == 2
-        if not isinstance(args[0].value, Range):
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             return np.reshape(args[0].value, np.int32(args[1].value))
         else:
             return identity(args, node)
+        
+    @staticmethod
+    def resizearea(args: list, node):
+        assert len(args) == 2
+        return args[0].value
 
     @staticmethod
     def resizebilinear(args: list, node):
+        assert len(args) == 2
+        return args[0].value
+    
+    @staticmethod
+    def resizenearestneighbor(args: list, node):
         assert len(args) == 2
         return args[0].value
     
@@ -840,6 +943,13 @@ class InferValue:
         assert len(args) == 2
         return identity(args, node)
 
+    @staticmethod
+    def round(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            return Range(left=np.round(args[0].value.left), right=np.round(args[0].value.right))
+        return np.round(args[0].value)
+    
     @staticmethod
     def rsqrt(args: list, node):
         assert len(args) == 1
@@ -873,8 +983,16 @@ class InferValue:
         try:
             return [int(x) for x in args[0].size]
         except:
-            return Range(left=1, right=OVERFLOW_LIMIT)
-
+            return Range(left=1, right=length_unknown)
+        
+    @staticmethod
+    def sign(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            return Range(left=np.sign(args[0].value.left), right=np.sign(args[0].value.right))
+        else:
+            return np.sign(args[0].value)
+        
     @staticmethod
     def size(args: list, node):
         assert len(args) == 1
@@ -883,11 +1001,11 @@ class InferValue:
             for x in args[0].size:
                 ele *= int(x)
             if ele < 0:
-                return Range(left=0, right=OVERFLOW_LIMIT)
+                return Range(left=0, right=length_unknown)
             else:
                 return ele
         except:
-            return Range(left=0, right=OVERFLOW_LIMIT)
+            return Range(left=0, right=length_unknown)
 
     @staticmethod
     def slice(args: list, node):
@@ -896,6 +1014,11 @@ class InferValue:
             return args[0].value[tuple(slice(a, a + b) if b >= 0 else slice(a, None) for a, b in zip(args[1].value, args[2].value))]
         except:
             return identity(args, node)
+        
+    @staticmethod
+    def sparsetodense(args: list, node):
+        assert len(args) == 4
+        return Range(left=0, right=1)
 
     @staticmethod
     def split(args: list, node):
@@ -966,7 +1089,7 @@ class InferValue:
                 ind = int(args[0].size[int(args[1].value)])
                 return Range(left=args[0].value.left * ind, right=args[0].value.right * ind)
             except:
-                ind = Range(left=0, right=OVERFLOW_LIMIT)
+                ind = Range(left=1, right=1e6)
                 t = InferValue.mul([args[0], AbstractInterpretation(value=ind, dtype=3, size=[])], node)
                 if isinstance(t, tuple):
                     raise AssertionError
@@ -1018,7 +1141,7 @@ class InferValue:
     @staticmethod
     def tile(args: list, node):
         assert len(args) == 2
-        if not isinstance(args[0].value, Range):
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             return np.tile(args[0].value, np.int32(args[1].value))
         else:
             return identity(args, node)
@@ -1030,7 +1153,7 @@ class InferValue:
             ind = int(args[0].size[-1])
             value = Range(left=0, right=ind - 1)
         except:
-            value = Range(left=0, right=OVERFLOW_LIMIT)
+            value = Range(left=0, right=length_unknown)
         return [identity(args, node), value]
 
     @staticmethod
@@ -1088,7 +1211,7 @@ class InferValue:
             x = np.max(args[0].size)
             return Range(left=0, right=x - 1)
         except:
-            return Range(left=0, right=OVERFLOW_LIMIT - 1)
+            return Range(left=0, right=length_unknown - 1)
 
     @staticmethod
     def zeroslike(args: list, node):
@@ -1148,6 +1271,15 @@ class InferValue:
         warnings.warn("savev2 not implemented", RuntimeWarning)
 
     # non linear operations:
+    @staticmethod
+    def sin(args: list, node):
+        assert len(args) == 1
+        return Range(left=-1,right=1)
+    
+    def cos(args: list, node):
+        assert len(args) == 1
+        return Range(left=-1,right=1)
+    
     @staticmethod
     def log(args: list, node):
         assert len(args) == 1
@@ -1220,20 +1352,27 @@ class InferValue:
     @staticmethod
     def softmax(args: list, node):
         assert len(args) == 1
-        ind = int(args[0].size[-1])
-        assert ind > 1
+        try:
+            ind = int(args[0].size[-1])
+        except:
+            ind = None
+            
         # intervals = [(-math.inf, -90), (-90, -1), (-1, 1), (1, 90), (90, math.inf)]
         if isinstance(args[0].value, Range):
             min_ele = safeexp(args[0].value.left)
             max_ele = safeexp(args[0].value.right)
             if max_ele >= OVERFLOW_LIMIT or min_ele == 0:
                 left = 0
-            else:
+            elif ind is not None:
                 left = min_ele / ((ind - 1) * max_ele + min_ele)
+            else:
+                left = min_ele / ((length_unknown - 1) * max_ele + min_ele)
             if max_ele >= OVERFLOW_LIMIT or min_ele == 0:
                 right = 1
-            else:
+            elif ind is not None:
                 right = max_ele / ((ind - 1) * min_ele + max_ele)
+            else:
+                right = max_ele / (min_ele + max_ele)
             return Range(left=left, right=right)
         else:
             tmp_exp = np.exp(args[0].value)

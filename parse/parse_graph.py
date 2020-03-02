@@ -234,7 +234,8 @@ class Graph:
                 if u.op.lower() in ["assert"]:
                     pass
                 else:
-                    raise AttributeError
+                    temp = None
+                    warnings.warn("fail to analysis %s due to NotImplemented" % son, RuntimeWarning)
             except AssertionError:
                 raise AssertionError
 
@@ -446,8 +447,8 @@ class Graph:
             except:
                 pass
 
-        if not pre_check:
-            return "ni"
+#         if not pre_check:
+#             return "ni"
             
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
@@ -536,12 +537,19 @@ class Graph:
                 if factor < 0:
                     value.left, value.right = value.right, value.left
                 return value
+            
+            for (name, position) in group.value:
+                if name[:5] == magic: # We first store relu_value
+                    new_relu[(name, position)] = group.value[(name, position)]
+                    
                 
             for (name, position) in group.value:
-                if name[:5] == magic: # We first skip relu_value
+                if name[:5] == magic: # We then skip relu_value
                     continue
                 
                 if name == node_name:
+                    if name in override_dict or (name, position) in override_dict:
+                        return get_value(name, position)
                     return None
                 
                 value = get_value(name, position)
@@ -575,8 +583,7 @@ class Graph:
                     right_ele += max(0, -value.left) * t
 
                 # we add back non-zero relu_factor
-                if relu_factor != 0:
-                    new_relu[(relu_name, position)] = relu_factor
+                new_relu[(relu_name, position)] = relu_factor
 
                 value = update_ele(non_relu_factor, value, False)
                 left_ele = left_ele + value.left
