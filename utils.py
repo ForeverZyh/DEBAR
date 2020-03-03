@@ -15,3 +15,16 @@ def resolve_type(y):
         return bool(y)
     else:
         return y
+
+def shape_from_proto(shape):
+    s = str(shape)
+    x = 0
+    u = []
+    for i in range(len(s)):
+        if s[i] >= '0' and s[i] <= '9':
+            x = x * 10 + ord(s[i]) - 48
+        elif x != 0:
+            u.append(x)
+            x = 0
+    
+    return u
