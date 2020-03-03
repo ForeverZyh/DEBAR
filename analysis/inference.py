@@ -301,16 +301,7 @@ class InferValue:
 
     @staticmethod
     def concatv2(args: list, node):
-        any_range = False
-        for x in args:
-            if isinstance(x.value, Range):
-                any_range = True
-                break
-                
-        if not any_range:
-            return np.concatenate([x.value for x in args[:-1]], axis=np.int32(args[-1].value))
-        else:
-            return packtorange(args[:-1], node)
+        return packtorange(args[:-1], node)
 
     @staticmethod
     def const(args: list, node):
@@ -381,10 +372,7 @@ class InferValue:
 
     @staticmethod
     def expanddims(args: list, node):
-        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
-            return np.expand_dims(args[0].value, axis=np.int32(args[1].value))
-        else:
-            return identity(args, node)
+        return identity(args, node)
         
     @staticmethod
     def fifoqueuev2(args: list, node):
@@ -393,12 +381,7 @@ class InferValue:
     @staticmethod
     def fill(args: list, node):
         assert len(args) == 2
-        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
-            ret = np.empty(args[0].value)
-            ret.fill(args[1].value)
-            return ret
-        else:
-            return identity([args[1]])
+        return identity([args[1]])
 
     @staticmethod
     def floor(args: list, node):
@@ -537,10 +520,7 @@ class InferValue:
     @staticmethod
     def linspace(args: list, node):
         assert len(args) == 3
-        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range) or isinstance(args[2].value, Range):
-            return packtorange(args[:-1], node)
-        else:
-            return np.linspace(args[0].value, args[1].value, args[2].value)
+        return packtorange(args[:-1], node)
 
     @staticmethod
     def logicaland(args: list, node):
@@ -745,16 +725,7 @@ class InferValue:
 
     @staticmethod
     def pack(args: list, node):
-        any_range = False
-        for x in args:
-            if isinstance(x.value, Range):
-                any_range = True
-                break
-                
-        if not any_range:
-            return np.stack([x.value for x in args], axis=int(node.attr["axis"].i))
-        else:
-            return packtorange(args, node)
+        return packtorange(args, node)
 
     @staticmethod
     def pad(args: list, node):
@@ -843,18 +814,9 @@ class InferValue:
     @staticmethod
     def range(args: list, node):
         assert len(args) == 3
-        all_single_np = True
-        for arg in args:
-            if isinstance(arg.value, Range) or len(np.array(arg.value).shape) > 0:
-                all_single_np = False
-                break
-                
-        if not all_single_np:
-            left = args[0].value.left if isinstance(args[0].value, Range) else np.min(args[0].value)
-            right = args[1].value.right if isinstance(args[1].value, Range) else np.max(args[1].value)
-            return Range(left=left, right=right)
-        else:
-            return np.arange(args[0].value, args[1].value, args[2].value)
+        left = args[0].value.left if isinstance(args[0].value, Range) else np.min(args[0].value)
+        right = args[1].value.right if isinstance(args[1].value, Range) else np.max(args[1].value)
+        return Range(left=left, right=right)
         
 
     @staticmethod
@@ -913,10 +875,7 @@ class InferValue:
     @staticmethod
     def reshape(args: list, node):
         assert len(args) == 2
-        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
-            return np.reshape(args[0].value, np.int32(args[1].value))
-        else:
-            return identity(args, node)
+        return identity(args, node)
         
     @staticmethod
     def resizearea(args: list, node):
@@ -1141,10 +1100,7 @@ class InferValue:
     @staticmethod
     def tile(args: list, node):
         assert len(args) == 2
-        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
-            return np.tile(args[0].value, np.int32(args[1].value))
-        else:
-            return identity(args, node)
+        return identity(args, node)
 
     @staticmethod
     def topkv2(args: list, node):
@@ -1159,10 +1115,7 @@ class InferValue:
     @staticmethod
     def transpose(args: list, node):
         assert len(args) == 2
-        try:
-            return np.transpose(args[0].value, np.int32(args[1].value))
-        except:
-            return identity(args, node)
+        return identity(args, node)
 
     @staticmethod
     def unpack(args: list, node):
