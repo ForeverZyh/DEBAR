@@ -6,11 +6,12 @@ import queue
 from graphviz import Digraph
 import warnings
 import z3
-from solver import meet, meet_relation_variable, magic
-from solver import Range, Array, Solver
+from solver import meet, meet_relation_variable, magic, const_linear
+from solver import Range, Array, Solver, Linear
 from utils import *
 import numpy as np
 import copy
+from itertools import product
 
 turn_on_array = True
 
@@ -94,6 +95,8 @@ class Graph:
                 self.node_output[node.name] = AbstractInterpretation(
                     size=node_values[0].shape, dtype=node_values[0].dtype,
                     array=Array(node.name, node_values[0].shape))
+                if node.op == "Const":
+                    self.node_output[node.name].value = InferValue.const([], node)
             for in_node_raw in node.input:
                 is_control = False
                 if in_node_raw[0] == '^':
@@ -146,11 +149,13 @@ class Graph:
             if node_inds[node_name] == 0:
                 q.put(node_name)
 
+        queue_nodes = []
         while True:
             while not q.empty():
                 son = q.get()
                 nodes_in_main_clique.remove(son)
                 self.nodes_in_main_clique_topology[son] = cnt
+                queue_nodes.append(son)
                 cnt += 1
                 if son in self.graph_forward[0]:
                     for next_node_name in self.graph_forward[0][son]:
@@ -176,7 +181,85 @@ class Graph:
 
             assert min_ind is not None
             q.put(min_ind)
-
+        
+        self.size_assistance(queue_nodes)
+    
+    def size_assistance(self, queue_nodes): # infer size by matrix multiplication and concat
+        for son in reversed(queue_nodes):
+            def preprocess_size(size):
+                preprocessed_size = []
+                for x in size:
+                    if str(x) == "?":
+                        preprocessed_size.append(None)
+                    else:
+                        preprocessed_size.append(int(x))
+                return preprocessed_size
+            
+            if not isinstance(self.node_output[son].size, list):
+                try:
+                    self.node_output[son].size = preprocess_size(self.node_output[son].size)
+                except:
+                    self.node_output[son].size = None
+            else:
+                new_size = []
+                for size in self.node_output[son].size:
+                    try:
+                        new_size.append(preprocess_size(size))
+                    except:
+                        new_size.append(None)
+                self.node_output[son].size = new_size
+            
+        for son in reversed(queue_nodes):
+            u = self.node_by_name[son]
+            if u.op in ["MatMul", "BatchMatMul"]:
+                x_name = self.graph_backward[0][son][0]
+                y_name = self.graph_backward[0][son][1]
+                if self.node_output[x_name].size is not None and self.node_output[y_name].size is not None and self.edge_index[son][0] is None and self.edge_index[son][1] is None: # do not consider edge_index is not None for simplisity
+                    try:
+                        common_size = real_size(self.node_output[x_name].size[-1], self.node_output[y_name].size[-2])
+                    except:
+                        common_size = None
+                    if common_size is not None:
+                        self.node_output[x_name].size[-1] = common_size
+                        self.node_output[y_name].size[-2] = common_size
+                        # rebuild the array if the size if inferred
+                        self.node_output[x_name].array = Array(x_name, self.node_output[x_name].size)
+                        self.node_output[y_name].array = Array(y_name, self.node_output[y_name].size)
+                        
+            elif u.op == "ConcatV2":
+                concat_ind = int(self.node_output[self.graph_backward[0][son][-1]].value)
+                if self.node_output[son].size is not None and self.node_output[son].size[concat_ind] is not None:
+                    how_many_none = 0
+                    where_none = None
+                    remain_size = self.node_output[son].size[concat_ind]
+                    for (i, in_node_name) in enumerate(self.graph_backward[0][son][:-1]):
+                        if self.node_output[in_node_name].size is not None and self.edge_index[son][i] is None: # do not consider edge_index is not None for simplisity
+                            modified = False
+                            for ind in range(len(self.node_output[son].size)):
+                                if ind != concat_ind and self.node_output[son].size[ind] is not None and self.node_output[in_node_name].size[ind] is None:
+                                    self.node_output[in_node_name].size[ind] = self.node_output[son].size[ind]
+                                    modified = True
+                                    break
+                            
+                            if modified:
+                                self.node_output[in_node_name].array = Array(in_node_name, self.node_output[in_node_name].size)
+                                
+                    for (i, in_node_name) in enumerate(self.graph_backward[0][son][:-1]): # try to infer the unknown size at the index
+                        if self.node_output[in_node_name].size is not None and self.edge_index[son][i] is None: # do not consider edge_index is not None for simplisity
+                            if self.node_output[in_node_name].size[concat_ind] is not None:
+                                remain_size -= self.node_output[in_node_name].size[concat_ind]
+                            else:
+                                how_many_none += 1
+                                where_none = in_node_name
+                        else: # if there is unknown size, then do no consider
+                            how_many_none = 0
+                            break
+                    
+                    if how_many_none == 1:
+                        self.node_output[where_none].size[concat_ind] = remain_size
+                        # rebuild the array if the size if inferred
+                        self.node_output[where_none].array = Array(where_none, self.node_output[where_none].size)
+        
     def backward_slice(self, node, visited, non_control_only=True):  # return a list of nodes
         visited.add(node)
         ret = [node]
@@ -395,6 +478,45 @@ class Graph:
                     pass
                 except AssertionError:
                     pass
+                
+                if u.op == "BatchMatMul": # put it here, since it will call get_left_right_linear. refactor needed.
+                    try:
+                        args = parents_aps
+                        assert len(args) == 2
+                        assert args[0].size is not None and args[1].size is not None
+                        assert len(args[0].size) == len(args[1].size)
+                        for i in range(len(args[0].size) - 2):
+                            assert args[0].size[i] == args[1].size[i]
+                        assert len(args[0].array.block_to_symbol) > 1 or len(args[1].array.block_to_symbol) > 1
+                        print(son)
+                        tmp_slices = Array.join_index_slices(args[0].array.index_slices[:-2] + [args[0].array.index_slices[-1], args[0].array.index_slices[-2]], args[1].array.index_slices) # swap the last indexes of the first matrix, but the last index is unused
+                        slices0 = tmp_slices[:-2] + [args[0].array.index_slices[-2], tmp_slices[-2]] # swap back
+                        slices1 = tmp_slices[:-1] + [args[1].array.index_slices[-1]]
+                        keys0 = args[0].array.get_corresponding_keys(slices0) 
+                        keys1 = args[1].array.get_corresponding_keys(slices1)
+                        temp_array = Array("tmp", self.node_output[son].size)
+                        temp_array.block_to_symbol = dict()
+                        temp_array.index_slices = tmp_slices[:-2] + [args[0].array.index_slices[-2], args[1].array.index_slices[-1]]
+                        for (key0, slice0) in zip(keys0, product(*slices0)):
+                            for (key1, slice1) in zip(keys1, product(*slices1)):
+                                if slice0[-1] == slice1[-2]:
+                                    lmatrix = self.get_left_right_linear(key0, son, override_dict)
+                                    rmatrix = self.get_left_right_linear(key1, son, override_dict)
+                                    one = Linear((const_linear, tuple([(0, 0) for _ in slices0])), lmatrix * rmatrix)
+                                    target_slice = slice0[:-1] + (slice1[-1],)
+                                    print(target_slice)
+                                    if target_slice in temp_array.block_to_symbol:
+                                        temp_array.block_to_symbol[target_slice] = temp_array.block_to_symbol[target_slice] + one
+                                    else:
+                                        temp_array.block_to_symbol[target_slice] = one
+                        
+                        print("succ")
+                        
+                    except AssertionError:
+                        pass            
+                    except:
+                        raise AttributeError
+                        temp_array = None
 
         self.node_output[son].value = temp
         
@@ -511,99 +633,104 @@ class Graph:
             return identity([self.node_output[name[:pos]].index_of(index)])
         else:
             return identity([self.node_output[name].index_of(None)])
+    
+    def get_left_right_linear(self, group: Linear, node_name, override_dict): # for single Linear
+        ans = Range(left=0, right=0)
+        new_relu = {}
+            
+        def get_value(name, position):
+            if name in override_dict:
+                return override_dict[name]
+            if (name, position) in override_dict:
+                return override_dict[(name, position)]
+            return self.get_value(name)
 
+        def update_ele(factor, value, is_relu):
+            if is_relu:
+                value = Range(left=max(0, value.left), right=max(0, value.right))
+
+            value = value * factor
+            if factor < 0:
+                value.left, value.right = value.right, value.left
+            return value
+
+        for (name, position) in group.value:
+            if name[:5] == magic: # We first store relu_value
+                new_relu[(name, position)] = group.value[(name, position)]
+
+
+        for (name, position) in group.value:
+            if name[:5] == magic: # We then skip relu_value
+                continue
+            
+            if name == const_linear: # if it is const one
+                ans = ans + group.value[(name, position)]
+                continue
+    
+            if name == node_name:
+                if name in override_dict or (name, position) in override_dict:
+                    return get_value(name, position)
+                return None
+
+            value = get_value(name, position)
+
+            if value is None: ## only happens when self.node_output[name].index_of(index) is a zero-size array.
+                continue
+
+            value = Range(left=value.left, right=value.right)
+
+            non_relu_factor = group.value[(name, position)]
+            relu_name = magic + name
+            # we first del the key,value pair in the dict
+            if (relu_name, position) in group.value:
+                relu_factor = group.value[(relu_name, position)]
+            else:
+                relu_factor = 0
+
+            # this will be encountered second
+            if relu_factor < 0 and non_relu_factor > 0:
+                t = min(-relu_factor, non_relu_factor)
+                non_relu_factor -= t # sub back the non_relu_factor
+                relu_factor += t # add back the relu_factor
+                ans.left += min(0, value.left) * t
+                ans.right += min(0, value.right) * t
+
+            if relu_factor > 0 and non_relu_factor < 0:
+                t = min(relu_factor, -non_relu_factor)
+                non_relu_factor += t # add back the non_relu_factor
+                relu_factor -= t # sub back the relu_factor
+                ans.left += max(0, -value.right) * t
+                ans.right += max(0, -value.left) * t
+
+            # we add back non-zero relu_factor
+            new_relu[(relu_name, position)] = relu_factor
+
+            value = update_ele(non_relu_factor, value, False)
+            ans = ans + value
+
+        for (name, position) in new_relu:
+            non_relu = name[len(magic):]
+            value = get_value(non_relu, position)
+
+            if value is None: ## only happens when self.node_output[name].index_of(index) is a zero-size array.
+                continue
+
+            value = Range(left=value.left, right=value.right)
+            value = update_ele(new_relu[(name, position)], value, True)
+            ans = ans + value
+            
+        return ans
         
-    def get_left_right(self, groups: dict, node_name, override_dict):
+        
+    def get_left_right(self, groups: dict, node_name, override_dict): # for a dict of Linear
         left = []
         right = []
         for key in groups:
-            left_ele = 0
-            right_ele = 0
-            group = groups[key]
-            new_relu = {}
-            
-            def get_value(name, position):
-                if name in override_dict:
-                    return override_dict[name]
-                if (name, position) in override_dict:
-                    return override_dict[(name, position)]
-                return self.get_value(name)
-                
-            def update_ele(factor, value, is_relu):
-                if is_relu:
-                    value = Range(left=max(0, value.left), right=max(0, value.right))
-
-                value = value * factor
-                if factor < 0:
-                    value.left, value.right = value.right, value.left
-                return value
-            
-            for (name, position) in group.value:
-                if name[:5] == magic: # We first store relu_value
-                    new_relu[(name, position)] = group.value[(name, position)]
-                    
-                
-            for (name, position) in group.value:
-                if name[:5] == magic: # We then skip relu_value
-                    continue
-                
-                if name == node_name:
-                    if name in override_dict or (name, position) in override_dict:
-                        return get_value(name, position)
-                    return None
-                
-                value = get_value(name, position)
-                
-                if value is None: ## only happens when self.node_output[name].index_of(index) is a zero-size array.
-                    continue
-                    
-                value = Range(left=value.left, right=value.right)
-                
-                non_relu_factor = group.value[(name, position)]
-                relu_name = magic + name
-                # we first del the key,value pair in the dict
-                if (relu_name, position) in group.value:
-                    relu_factor = group.value[(relu_name, position)]
-                else:
-                    relu_factor = 0
-
-                # this will be encountered second
-                if relu_factor < 0 and non_relu_factor > 0:
-                    t = min(-relu_factor, non_relu_factor)
-                    non_relu_factor -= t # sub back the non_relu_factor
-                    relu_factor += t # add back the relu_factor
-                    left_ele += min(0, value.left) * t
-                    right_ele += min(0, value.right) * t
-
-                if relu_factor > 0 and non_relu_factor < 0:
-                    t = min(relu_factor, -non_relu_factor)
-                    non_relu_factor += t # add back the non_relu_factor
-                    relu_factor -= t # sub back the relu_factor
-                    left_ele += max(0, -value.right) * t
-                    right_ele += max(0, -value.left) * t
-
-                # we add back non-zero relu_factor
-                new_relu[(relu_name, position)] = relu_factor
-
-                value = update_ele(non_relu_factor, value, False)
-                left_ele = left_ele + value.left
-                right_ele = right_ele + value.right
-            
-            for (name, position) in new_relu:
-                non_relu = name[len(magic):]
-                value = get_value(non_relu, position)
-                
-                if value is None: ## only happens when self.node_output[name].index_of(index) is a zero-size array.
-                    continue
-                    
-                value = Range(left=value.left, right=value.right)
-                value = update_ele(new_relu[(name, position)], value, True)
-                left_ele = left_ele + value.left
-                right_ele = right_ele + value.right
-                
-
-            left.append(left_ele)
-            right.append(right_ele)
+            ans = self.get_left_right_linear(groups[key], node_name, override_dict)
+            if ans is None:
+                return None
+            left.append(ans.left)
+            right.append(ans.right)
         
         if len(left) == 0 or len(right) == 0:
             return None
@@ -618,7 +745,7 @@ class Graph:
                     u = shape_from_proto(self.node_by_name[op].attr["shape"].shape)
 
                 tmp = 1
-                if str(u) == '<unknown>':
+                if u is None:
                     continue
                 for x in u:
                     tmp *= int(x)

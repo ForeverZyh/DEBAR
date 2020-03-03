@@ -7,19 +7,11 @@ from solver import Range, Solver, Array
 import numpy as np
 import z3
 from utils import OVERFLOW_D, UNDERFLOW_D, OVERFLOW_LIMIT, UNDERFLOW_LIMIT
-from utils import resolve_type
+from utils import resolve_type, real_size
 from itertools import combinations_with_replacement, product
 
 turn_on_bool = False
 length_unknown = 1e3
-
-def real_size(a, b):
-    if str(a) == "?" and str(b) == "?":
-        raise AssertionError("cannot infer ? size")
-    elif str(a) == "?":
-        return int(b)
-    else:
-        return int(a)
     
 
 def identity(args, node=None):
@@ -225,6 +217,8 @@ class InferValue:
         assert len(args) == 2
         x = copy.deepcopy(args[0])
         y = copy.deepcopy(args[1])
+        if x.size is None or y.size is None:
+            return dumy()
         x.size = x.size[1:]
         y.size = y.size[1:]
         return InferValue.matmul([x, y], node)
@@ -599,10 +593,9 @@ class InferValue:
     def matmul(args: list, node):
         assert len(args) == 2
         try:
-            len(args[0].size) == len(args[1].size)
+            assert len(args[0].size) == len(args[1].size)
         except:
             return dumy()
-        assert len(args[0].size) == len(args[1].size)
         for i in range(len(args[0].size) - 2):
             assert str(args[0].size[i]) == "?" or str(args[1].size[i]) == "?" or args[0].size[i] == args[1].size[i]
         ind = real_size(args[0].size[-1], args[1].size[-2])
@@ -1735,6 +1728,7 @@ class InferArray:
             ii += 1
 
         return rets if len(rets) > 1 else rets[0]
+        
 
     # @staticmethod
     # def split(args: list, node):

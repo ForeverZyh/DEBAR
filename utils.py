@@ -28,3 +28,12 @@ def shape_from_proto(shape):
             x = 0
     
     return u
+
+def real_size(a, b):
+    if a is None and b is None:
+        raise AssertionError("cannot infer ? size")
+    elif a is None:
+        return b
+    else:
+        return a
+    

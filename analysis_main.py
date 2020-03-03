@@ -135,7 +135,7 @@ if __name__ == "__main__":
             print(suspected_node.op, suspected_node.name)
             print("sat")
             cnt_sat += 1
-#             if cnt_sat == 1: exit(0)
+            if cnt_sat == 1: exit(0)
         else:
             cnt_unsat += 1
         cnt_all += 1

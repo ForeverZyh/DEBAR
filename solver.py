@@ -9,6 +9,7 @@ import bisect
 
 magic = "$relu"
 magic1 = "$max"
+const_linear = "$const"
 
 
 class Solver:
@@ -145,22 +146,41 @@ class Range:
         return "[%s, %s]\n[%s, %s]" % (self.left, self.right, str(type(self.left)), str(type(self.right)))
 
     def __mul__(self, other):
-        return Range(left=None if self.left is None else self.left * other,
-                     right=None if self.right is None else self.right * other,
-                     const_type=self.const_type)
+        if isinstance(other, Range):
+            ends = [self.left * other.left, self.left * other.right, self.right * other.left, self.right * other.right]
+            return Range(left=min(ends), right=max(ends), const_type=self.const_type)
+        else:
+            return Range(left=None if self.left is None else self.left * other,
+                         right=None if self.right is None else self.right * other,
+                         const_type=self.const_type)
 
     def __add__(self, other):
-        return Range(left=None if self.left is None else self.left + other,
-                     right=None if self.right is None else self.right + other,
-                     const_type=self.const_type)
+        if isinstance(other, Range):
+            return Range(left=None if self.left is None else self.left + other.left,
+                         right=None if self.right is None else self.right + other.right,
+                         const_type=self.const_type)
+        else:
+            return Range(left=None if self.left is None else self.left + other,
+                         right=None if self.right is None else self.right + other,
+                         const_type=self.const_type)
+    
+    def __sub__(self, other):
+        if isinstance(other, Range):
+            return Range(left=None if self.left is None else self.left - other.right,
+                         right=None if self.right is None else self.right - other.left,
+                         const_type=self.const_type)
+        else:
+            return Range(left=None if self.left is None else self.left - other,
+                         right=None if self.right is None else self.right - other,
+                         const_type=self.const_type)
     
     def single(self):
         return self.left == self.right
 
 
 class Linear:
-    def __init__(self, e):
-        self.value = {e: 1}
+    def __init__(self, e, self_value=1):
+        self.value = {e: self_value}
         self.map_to_index = {e: list(range(len(e[1])))}
         # map_to_index is the mapping from e = (name, position) to the index of outer index_slice
         # if position = (l_0,r_0) ... (l_n,r_n) then name[l_0:r_0,:,...,:] is mapped to outer[..., map_to_index[0]-th , ...]
@@ -175,7 +195,7 @@ class Linear:
         ret = copy.deepcopy(self)
         for x in other.value:
             if x in ret.value:
-                ret.value[x] += other.value[x]
+                ret.value[x] = ret.value[x] + other.value[x]
             else:
                 ret.value[x] = other.value[x]
                 ret.map_to_index[x] = other.map_to_index[x]
@@ -185,9 +205,9 @@ class Linear:
         ret = copy.deepcopy(self)
         for x in other.value:
             if x in ret.value:
-                ret.value[x] -= other.value[x]
+                ret.value[x] = ret.value[x] - other.value[x]
             else:
-                ret.value[x] = -other.value[x]
+                ret.value[x] = other.value[x] * (-1)
                 ret.map_to_index[x] = other.map_to_index[x]
         return ret
 
@@ -260,22 +280,26 @@ class Linear:
             #     then magic + name, value[x]
             #     else 0
             assert name[:len(magic1)] != magic1 # we don't consider two magic tag situation 
-            if name[:len(magic)] != magic: # relu(name)
-                if self.value[x] >= 0:
-                    ret.value[(magic + name, position)] = self.value[x]
-                    ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
-                else:
-                    ret.value[(magic + name, position)] = -self.value[x]
-                    ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
-                    ret.value[(name, position)] = self.value[x]
-                    ret.map_to_index[(name, position)] = self.map_to_index[x]
+            if name == const_linear: # if it is a const, apply relu directly
+                ret.value[(name, position)] = Range(left=max(0, self.value[x].left), right=max(0, self.value[x].right))
+                ret.map_to_index[(name, position)] = self.map_to_index[x]
             else:
-                if self.value[x] >= 0:
-                    ret.value[(name, position)] = self.value[x]
-                    ret.map_to_index[(name, position)] = self.map_to_index[x]
+                if name[:len(magic)] != magic: # relu(name)
+                    if self.value[x] >= 0:
+                        ret.value[(magic + name, position)] = self.value[x]
+                        ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
+                    else:
+                        ret.value[(magic + name, position)] = -self.value[x]
+                        ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
+                        ret.value[(name, position)] = self.value[x]
+                        ret.map_to_index[(name, position)] = self.map_to_index[x]
                 else:
-                    ret.value[(name, position)] = 0
-                    ret.map_to_index[(name, position)] = self.map_to_index[x]
+                    if self.value[x] >= 0:
+                        ret.value[(name, position)] = self.value[x]
+                        ret.map_to_index[(name, position)] = self.map_to_index[x]
+                    else:
+                        ret.value[(name, position)] = 0
+                        ret.map_to_index[(name, position)] = self.map_to_index[x]
                 
         return ret
     

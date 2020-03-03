@@ -11,11 +11,12 @@ class AbstractInterpretation:
         self.array = array
 
     def has_none(self):
-        return self.size is None or self.value is None or self.dtype is None
+        return self.value is None or self.dtype is None
 
     def index_of(self, i):
         if i is None:
-            return self
+            return AbstractInterpretation(size=self.size, value=self.value, dtype=self.dtype,
+                                      constraints=self.constraints, array=self.array)
         if self.has_none():
             return AbstractInterpretation()
 
