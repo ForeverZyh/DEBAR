@@ -1582,6 +1582,8 @@ class InferArray:
         x = list(ret.block_to_symbol.keys())[-1]
         ret.block_to_symbol = {}
         ret.block_to_symbol[x] = Linear(("dumy", (0, 1)))
+        ret.block_to_symbol[x].value = {}
+        ret.block_to_symbol[x].map_to_index = {}
 
         return ret
 
