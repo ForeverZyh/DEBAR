@@ -34,7 +34,7 @@ if __name__ == "__main__":
     if network_name in SpecifiedRanges.specified_ranges:
         SpecifiedRanges.ranges_looking_up = SpecifiedRanges.specified_ranges[network_name]
         
-    graph = Graph(pbtxt, "verbose.txt")
+    graph = Graph(pbtxt)#, "verbose.txt")
     suspected_nodes = []
     for node in graph.graph_def.node:
         if node.op in rule and graph.f.find(node.name) == graph.main_clique:

@@ -64,6 +64,7 @@ class Graph:
 
     def write(self, x):
         if self.file is None:
+            return
             print(x)
         else:
             self.file.write(str(x) + "\n")
@@ -391,9 +392,7 @@ class Graph:
 
                     if not flag:
                         temp_array = None
-                except AttributeError:
-                    pass
-                except AssertionError:
+                except:
                     pass
 
         self.node_output[son].value = temp
