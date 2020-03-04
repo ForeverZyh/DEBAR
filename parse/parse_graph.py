@@ -1,6 +1,6 @@
 from google.protobuf import text_format
 import tensorflow as tf
-from analysis.inference import InferValue, InferArray
+from analysis.inference import InferValue, InferArray, identity, dumy
 from analysis.abstract_interpretation import AbstractInterpretation
 import queue
 from graphviz import Digraph
@@ -10,6 +10,7 @@ from solver import meet, meet_relation_variable, magic
 from solver import Range, Array, Solver
 from utils import *
 import numpy as np
+import copy
 
 turn_on_array = True
 
@@ -47,15 +48,8 @@ class Graph:
             self.graph_def = text_format.Parse(txt, tf.GraphDef())
             tf.import_graph_def(self.graph_def, name="")
             self.tf_graph = tf.get_default_graph()
-            # for op in self.tf_graph.get_operations():
-            #     print("==============")
-            #     print(op.name, op.values())
-            #     tensors = op.values()
-            #     for tensor in tensors:
-            #         print(tensor.shape, int(tensor.dtype))
-            #     print("==============")
-        self.graph_backward = {}
-        self.graph_forward = {}
+        self.graph_backward = [{}, {}] # [0] for non_control; [1] for control
+        self.graph_forward = [{}, {}] # [0] for non_control; [1] for control
         self.node_by_name = {}
         self.f = UnionSet([node.name for node in self.graph_def.node])
         self.node_output = {}
@@ -65,8 +59,8 @@ class Graph:
         self.main_clique = None
         self.tensor_to_op = {}
         self.nodes_in_main_clique_topology = {}
-        self.build()
         self.file = None if verbose_file is None else open(verbose_file, "w")
+        self.build()
 
     def write(self, x):
         if self.file is None:
@@ -83,7 +77,8 @@ class Graph:
                 self.tensor_to_op[tensor.name] = op.name
 
         for node in self.graph_def.node:
-            self.graph_backward[node.name] = []
+            self.graph_backward[0][node.name] = []
+            self.graph_backward[1][node.name] = []
             self.edge_index[node.name] = []
             node_values = self.tf_graph.get_operation_by_name(node.name).values()
 
@@ -110,19 +105,22 @@ class Graph:
 
                     in_tensor_names = [tensor.name for tensor in self.tf_graph.get_operation_by_name(
                         self.tensor_to_op[in_node_raw]).values()]
-                    self.edge_index[node.name].append(None if len(
-                        in_tensor_names) == 1 else in_tensor_names.index(in_node_raw))
+                    if not is_control: 
+                        self.edge_index[node.name].append(None if len(
+                            in_tensor_names) == 1 else in_tensor_names.index(in_node_raw))
                 else:  # if the input is defined by the operation's name
                     in_node = in_node_raw
 
                     in_tensor_names = [tensor.name for tensor in self.tf_graph.get_operation_by_name(
                         in_node_raw).values()]
-                    self.edge_index[node.name].append(None if len(in_tensor_names) == 1 else 0)
+                    if not is_control:
+                        self.edge_index[node.name].append(None if len(in_tensor_names) == 1 else 0)
 
-                if in_node not in self.graph_forward:
-                    self.graph_forward[in_node] = []
-                self.graph_forward[in_node].append((node.name, is_control))
-                self.graph_backward[node.name].append((in_node, is_control))
+                if in_node not in self.graph_forward[0]:
+                    self.graph_forward[0][in_node] = []
+                    self.graph_forward[1][in_node] = []
+                self.graph_forward[is_control][in_node].append(node.name)
+                self.graph_backward[is_control][node.name].append(in_node)
                 self.f.union(in_node, node.name)
 
         max_rank = 0
@@ -140,7 +138,7 @@ class Graph:
         nodes_in_main_clique = set()
         cnt = 0
         for node_name in self.f.f:
-            node_inds[node_name] = 0 if node_name not in self.graph_backward else len(self.graph_backward[node_name])
+            node_inds[node_name] = 0 if node_name not in self.graph_backward[0] else len(self.graph_backward[0][node_name]) # is sufficient to only query in self.graph_backward[0]
             if self.f.find(node_name) == self.main_clique:
                 nodes_in_main_clique.add(node_name)
 
@@ -154,39 +152,42 @@ class Graph:
                 nodes_in_main_clique.remove(son)
                 self.nodes_in_main_clique_topology[son] = cnt
                 cnt += 1
-                if son in self.graph_forward:
-                    for (next_node_name, _) in self.graph_forward[son]:
+                if son in self.graph_forward[0]:
+                    for next_node_name in self.graph_forward[0][son]:
                         node_inds[next_node_name] -= 1
                         if node_inds[next_node_name] == 0 and next_node_name in nodes_in_main_clique:
                             q.put(next_node_name)
 
             if len(nodes_in_main_clique) == 0:
                 break
-
+            
             min_ind = None
             for node_name in nodes_in_main_clique:
-                flag = False
-                if node_name in self.graph_backward:
-                    for (i, (in_node_name, _)) in enumerate(self.graph_backward[node_name]):
-                        if self.edge_index[node_name][i] is not None:
-                            flag = True
-                            break
-                if flag:
-                    continue
                 if self.node_by_name[node_name].op == "Merge":
-                    if min_ind is None or node_inds[node_name] < node_inds[min_ind]:
+                    can_add = True
+                    for in_node_name in self.graph_backward[0][node_name]:
+                        if in_node_name in nodes_in_main_clique and self.node_by_name[in_node_name].op != "NextIteration": 
+                            # if a Merge is not dominate by a NextIteration, then we cannot add it into the queue
+                            can_add = False
+                            break
+                            
+                    if can_add and (min_ind is None or node_inds[node_name] < node_inds[min_ind]):
                         min_ind = node_name
 
             assert min_ind is not None
             q.put(min_ind)
 
-    def backward_slice(self, node, visited):  # return a list of nodes
-        # print(self.node_by_name[node].op, " : ", self.graph_backward[node])
+    def backward_slice(self, node, visited, non_control_only=True):  # return a list of nodes
         visited.add(node)
         ret = [node]
-        for (in_node, _) in self.graph_backward[node]:
+        for in_node in self.graph_backward[0][node]:
             if in_node not in visited:
                 ret.extend(self.backward_slice(in_node, visited))
+        if not non_control_only:
+            for in_node in self.graph_backward[1][node]:
+                if in_node not in visited:
+                    ret.extend(self.backward_slice(in_node, visited))
+                    
         return ret
 
     def draw(self, clique, filename):
@@ -197,25 +198,240 @@ class Graph:
             dot.node(x, self.node_by_name[x].op)
 
         for node_name in clique:
-            if node_name in self.graph_forward:
-                for (next_node_name, is_control) in self.graph_forward[node_name]:
-                    if next_node_name in clique:
-                        dot.edge(node_name, next_node_name, color="blue" if is_control else "red")
+            if node_name in self.graph_forward[0]:
+                for is_contorl in range(2):
+                    for next_node_name in self.graph_forward[is_contorl][node_name]:
+                        if next_node_name in clique:
+                            dot.edge(node_name, next_node_name, color="blue" if is_contorl == 0 else "red")
 
         # print(dot.source)
         dot.render("./%s.gv" % filename, view=False)
+    
+    def summary_node(self, son, u, override_dict={}):
+        self.write(son)
+        parents_aps = []
+        all_none = True
+        for (i, in_node_name) in enumerate(self.graph_backward[0][son]): # only care about non_control edges
+            if in_node_name not in self.node_visited:
+                # there is a loop, and the node is "Merge"
+                assert self.node_by_name[in_node_name].op == "NextIteration"
+                self.node_visited.add(in_node_name)
+                self.node_output[in_node_name].value = dumy()
+
+            parents_aps.append(self.node_output[in_node_name].index_of(self.edge_index[son][i]))
+            all_none &= parents_aps[-1].has_none()
+
+        temp = None
+        temp_array = None
+        if all_none and len(parents_aps) > 0:
+            warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
+        else:
+            try:
+                temp = getattr(InferValue, u.op.lower())(parents_aps, u)
+                if temp is not None and isinstance(temp, tuple):
+                    raise AssertionError
+            except AttributeError:
+                if u.op.lower() in ["assert"]:
+                    pass
+                else:
+                    temp = None
+                    warnings.warn("fail to analysis %s due to NotImplemented" % son, RuntimeWarning)
+            except AssertionError:
+                raise AssertionError
+
+            if u.op == "Select": # special treatment for Select
+                compare_node_name = self.graph_backward[0][son][0]
+                compare_node = self.node_by_name[compare_node_name]
+                branch_node_name = self.graph_backward[0][son][1:]
+                branch_value = [self.node_output[branch_node_name[i - 1]].index_of(self.edge_index[son][i]).value for i in range(1, 3)]
+                branch_array = [self.node_output[branch_node_name[i - 1]].index_of(self.edge_index[son][i]).array for i in range(1, 3)]
+                if compare_node.op in ["GreaterEqual", "Greater", "LessEqual", "Less", "Equal", "NotEqual"]:
+                    args = self.graph_backward[0][compare_node_name] # args --> compare_node_name --> son
+                    range_args = [identity([self.node_output[args[i]].index_of(self.edge_index[compare_node_name][i])]) for i in range(2)]
+                    
+                    def can_determine():
+                        if compare_node.op == "GreaterEqual":
+                            if range_args[0].left >= range_args[1].right:
+                                return branch_value[0]
+                            elif range_args[0].right < range_args[1].left:
+                                return branch_value[1]
+                        elif compare_node.op == "Greater":
+                            if range_args[0].left > range_args[1].right:
+                                return branch_value[0]
+                            elif range_args[0].right <= range_args[1].left:
+                                return branch_value[1]
+                        elif compare_node.op == "LessEqual":
+                            if range_args[0].right <= range_args[1].left:
+                                return branch_value[0]
+                            elif range_args[0].left > range_args[1].right:
+                                return branch_value[1]
+                        elif compare_node.op == "Less":
+                            if range_args[0].right < range_args[1].left:
+                                return branch_value[0]
+                            elif range_args[0].left >= range_args[1].right:
+                                return branch_value[1]
+                        elif compare_node.op == "Equal":
+                            if range_args[0].single() and range_args[1].single() and range_args[1].left == range_args[0].left:
+                                return branch_value[0]
+                            elif range_args[0].left > range_args[1].right or range_args[0].right < range_args[1].left:
+                                return branch_value[1]
+                        elif compare_node.op == "NotEqual":
+                            if range_args[0].single() and range_args[1].single() and range_args[1].left == range_args[0].left:
+                                return branch_value[1]
+                            elif range_args[0].left > range_args[1].right or range_args[0].right < range_args[1].left:
+                                return branch_value[0]
+                        else:
+                            raise NotImplementedError
+                        return None
+                    
+                    temp_ret = can_determine()
+                    if temp_ret is not None:
+                        temp = temp_ret
+                    else: # cannot determine, we require one to be single_value_arrays. If two, we choose the first one
+                        single_value_array_id = None
+                        array = None
+                        for i in range(2):
+                            array = self.node_output[args[i]].index_of(self.edge_index[compare_node_name][i]).array
+                            single_value_array = True
+                            for key in array.block_to_symbol:
+                                group = array.block_to_symbol[key]
+                                if len(group.value) > 1:
+                                    single_value_array = False
+                                    break
+                                key = list(group.value.keys())[0]
+                                if key[:len(magic)] == magic: # we don't consider relu
+                                    single_value_array = False
+                                    break
+                            if single_value_array:
+                                single_value_array_id = i
+                                break
+
+                        if single_value_array_id is not None:
+                            def compute(op, c):
+                                values = []
+                                for arg_id_select in range(2):
+                                    override_dict = {}
+                                    for key in array.block_to_symbol:
+                                        group = array.block_to_symbol[key]
+                                        if len(group.value) == 1:
+                                            for (name, position) in group.value:
+                                                factor = group.value[(name, position)]
+                                                if factor == 0:
+                                                    continue
+                                                value = self.get_value(name)
+                                                rhs = c * (1 / factor)
+                                                if factor < 0:
+                                                    rhs = Range(left=rhs.right, right=rhs.left)
+                                                if (factor > 0) ^ (op in ["GreaterEqual", "Greater"]) ^ (arg_id_select == 0):
+                                                    # value >= rhs
+                                                    override_dict[(name, position)] = Range(left=max(value.left, rhs.left), right=max(value.right, rhs.left))
+                                                else:
+                                                    # value <= rhs
+                                                    override_dict[(name, position)] = Range(left=min(value.left, rhs.right), right=min(value.right, rhs.right))
+
+                                    values.append(self.get_left_right(branch_array[arg_id_select].block_to_symbol, branch_node_name[arg_id_select], override_dict))
+                                    if values[-1] is None:
+                                        return None
+                                return Range(left=min(values[0].left, values[1].left), right=max(values[0].right, values[1].right))
+                            
+                            def compute_equal(op, c):
+                                values = []
+                                for arg_id_select in range(2):
+                                    override_dict = {}
+                                    for key in array.block_to_symbol:
+                                        group = array.block_to_symbol[key]
+                                        if len(group.value) == 1:
+                                            for (name, position) in group.value:
+                                                factor = group.value[(name, position)]
+                                                if factor == 0:
+                                                    continue
+                                                value = self.get_value(name)
+                                                rhs = c * (1 / factor)
+                                                if factor < 0:
+                                                    rhs = Range(left=rhs.right, right=rhs.left)
+                                                if (op == "NotEqual") ^ (arg_id_select == 0):
+                                                    # value == rhs
+                                                    override_dict[(name, position)] = Range(left=max(value.left, rhs.left), right=min(value.right, rhs.right))
+                                                else:
+                                                    # value != rhs
+                                                    pass
+
+                                    values.append(self.get_left_right(branch_array[arg_id_select].block_to_symbol, branch_node_name[arg_id_select], override_dict))
+                                    if values[-1] is None:
+                                        return None
+                                return Range(left=min(values[0].left, values[1].left), right=max(values[0].right, values[1].right))
+                            
+                            if compare_node.op in ["GreaterEqual", "Greater", "LessEqual", "Less"]:
+                                if single_value_array_id == 1:
+                                    temp_ret = compute("Less" if compare_node.op in ["GreaterEqual", "Greater"] else "Greater", range_args[0])
+                                else:
+                                    temp_ret = compute(compare_node.op, range_args[1])
+                            else:
+                                if single_value_array_id == 1:
+                                    temp_ret = compute_equal(compare_node.op, range_args[0])
+                                else:
+                                    temp_ret = compute_equal(compare_node.op, range_args[1])
+
+                            if temp_ret is not None:
+                                temp = temp_ret
+
+            if turn_on_array:
+                try:
+                    for parents_ap in parents_aps:
+                        assert parents_ap.array.index_slices is not None
+                    temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
+                    flag = True
+                    if isinstance(self.node_output[son].dtype, list):
+                        for x in self.node_output[son].dtype:
+                            if int(x) == 10:
+                                flag = False
+                                break
+                    else:
+                        flag = int(self.node_output[son].dtype) != 10
+
+                    if not flag:
+                        temp_array = None
+                except AttributeError:
+                    pass
+                except AssertionError:
+                    pass
+
+        self.node_output[son].value = temp
+        
+        if temp_array is not None and isinstance(temp, Range):
+            self.node_output[son].array = temp_array
+            if isinstance(temp_array, list):
+                temp = []
+                for (i, tmp_array) in enumerate(temp_array):
+                    if temp_array[i].index_slices is None:
+                        temp.append(self.node_output[son].value[i])
+                        continue
+                    value = self.get_left_right(tmp_array.block_to_symbol, son, override_dict)
+                    if value is None:
+                        temp.append(self.node_output[son].value[i])
+                    else:
+                        temp.append(value)
+            elif temp_array.index_slices is not None:
+                value = self.get_left_right(temp_array.block_to_symbol, son, override_dict)
+                if value is not None:
+                    temp = value
+
+            self.node_output[son].value = temp
+
+        self.node_output[son].constraints = None
+        self.write(self.node_output[son])
 
     def forward_analysis(self, node_interested, appended=None):
-        nodes_interested = self.backward_slice(node_interested.name, set())
+        nodes_interested = self.backward_slice(node_interested.name, set(), True)  # only care about non_control edges
         for node in nodes_interested:
             if "gradient" in node.lower() and "stopgradient" not in node.lower():
-                print("----------Gradients are not interested----------")
+                self.write("----------Gradients are not interested----------")
                 return None
 
         nodes_interested.sort(key=lambda x: self.nodes_in_main_clique_topology[x])
         if appended is not None:
             if "gradient" in appended.name.lower() and "stopgradient" not in appended.name.lower():
-                print("----------Gradients are not interested----------")
+                self.write("----------Gradients are not interested----------")
                 return None
             nodes_interested.append(appended.name)
 
@@ -226,202 +442,171 @@ class Graph:
                 getattr(InferValue, u.op.lower())([], u)
             except AttributeError:
                 if u.op.lower() not in ["assert", "nextiteration"]:
-                    print(u.op)
+                    print(u.op, " not Implemented!")
                     pre_check = False
             except:
                 pass
 
-        if not pre_check:
-            raise AttributeError
-
+#         if not pre_check:
+#             return "ni"
+            
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
             if son in self.node_visited:
-                self.write(str(son) + "passed")
                 continue
 
-            self.write(son)
             self.node_visited.add(son)
-            parents_aps = []
-            all_none = True
-            for (i, (in_node_name, is_control)) in enumerate(self.graph_backward[son]):
-                if not is_control:
-                    if in_node_name not in self.node_visited:
-                        # there is a loop, and the node is "Merge"
-                        assert self.node_by_name[in_node_name].op == "NextIteration"
-                        self.node_visited.add(in_node_name)
-                        self.node_output[in_node_name].value = Range(name="nextiteration",
-                                                                     dtype=self.node_output[in_node_name].dtype)
-
-                    parents_aps.append(self.node_output[in_node_name].index_of(self.edge_index[son][i]))
-                    all_none &= parents_aps[-1].has_none()
-
-            temp = None
-            temp_array = None
-            if all_none and len(parents_aps) > 0:
-                warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
-            else:
-                try:
-                    temp = getattr(InferValue, u.op.lower())(parents_aps, u)
-                    if temp is not None and isinstance(temp, tuple):
-                        raise AssertionError
-                except AttributeError:
-                    if u.op.lower() in ["assert"]:
-                        pass
-                    else:
-                        raise AttributeError
-                except AssertionError:
-                    raise AssertionError
-                # except:
-                #     warnings.warn("fail to analysis %s due to None" % son, RuntimeWarning)
-                #     temp = None
-                if turn_on_array:
-                    try:
-                        temp_array = getattr(InferArray, u.op.lower())(parents_aps, u)
-                        flag = True
-                        if isinstance(self.node_output[son].dtype, list):
-                            for x in self.node_output[son].dtype:
-                                if int(x) == 10:
-                                    flag = False
-                                    break
-                        else:
-                            flag = int(self.node_output[son].dtype) != 10
-
-                        if not flag:
-                            temp_array = None
-                    except AttributeError:
-                        pass
-                    except AssertionError:
-                        pass
-
-            self.node_output[son].value = temp
-
-            if temp_array is not None:
-                self.node_output[son].array = temp_array
-                if isinstance(temp_array, list):
-                    temp = []
-                    for (i, tmp_array) in enumerate(temp_array):
-                        if temp_array[i].index_slices is None:
-                            temp.append(self.node_output[son].value[i])
-                            continue
-                        value = self.get_left_right(tmp_array.block_to_symbol, son)
-                        if value is None:
-                            temp.append(self.node_output[son].value[i])
-                        else:
-                            temp.append(value)
-                elif temp_array.index_slices is not None:
-                    value = self.get_left_right(temp_array.block_to_symbol, son)
-                    if value is not None:
-                        temp = value
-
-                self.node_output[son].value = temp
-            # elif temp is not None:
-            #     try:
-            #         if isinstance(temp, list):
-            #             for (i, tmp) in enumerate(temp):
-            #                 only_one = list(self.node_output[son].array[i].block_to_symbol.values())
-            #                 assert len(only_one) == 1
-            #                 if isinstance(tmp, Range):
-            #                     constraints.append(z3.And(only_one[0] >= tmp.left, only_one[0] <= tmp.right))
-            #                 else:
-            #                     constraints.append(
-            #                         z3.And(only_one[0] >= float(np.min(tmp)), only_one[0] <= float(np.max(tmp))))
-            #
-            #         else:
-            #             only_one = list(self.node_output[son].array.block_to_symbol.values())
-            #             assert len(only_one) == 1
-            #             if isinstance(temp, Range):
-            #                 constraints.append(z3.And(only_one[0] >= temp.left, only_one[0] <= temp.right))
-            #             else:
-            #                 constraints.append(
-            #                     z3.And(only_one[0] >= float(np.min(temp)), only_one[0] <= float(np.max(temp))))
-            #     except AssertionError:
-            #         raise AssertionError
-            #     except:
-            #         pass
-
-            self.node_output[son].constraints = None
-            self.write(self.node_output[son])
-
-        ret_constraints = []
+            self.summary_node(son, u)
+        
+        range_to_split = set()
         for son in nodes_interested[:-1]:
-            if self.node_output[son].constraints is not None:
-                ret_constraints.append(self.node_output[son].constraints)
-                self.write(self.node_output[son].constraints)
-        return z3.And(ret_constraints)
+            u = self.node_by_name[son]
+            if u.op in ["Exp"]: # if it is a non-linear function
+                in_node_name = self.graph_backward[0][son][0]
+                in_node_output = self.node_output[in_node_name].index_of(self.edge_index[son][0])
+                non_self = True
+                groups = in_node_output.array.block_to_symbol
+                range_to_split_local = set()
+                for key in groups:
+                    group = groups[key]
+                    for (name, position) in group.value:
+                        if name == in_node_name:
+                            non_self = False
+                            break
+                        factor = group.value[(name, position)]
+                        if factor != 0:
+                            if name[:len(magic)] == magic:
+                                range_to_split_local.add(name[len(magic):])
+                                
+                if non_self:
+                    range_to_split.update(range_to_split_local)
+        
+        return range_to_split, nodes_interested[:-1]
+    
+    def reevaluate(self, nodes_interested, node_interested, changed, override_dict):
+        back_up = {}
+        for son in nodes_interested:
+            u = self.node_by_name[son]
+            has_changed = False
+            for in_node_name in self.graph_backward[0][son]: # only care about non_control edges
+                if in_node_name in changed:
+                    has_changed = True
+                    break
+            
+            if has_changed:
+                back_up[son] = copy.deepcopy(self.node_output[son])
+                self.summary_node(son, u, override_dict)
+                changed.add(son)
+        
+        ret = copy.deepcopy(self.node_output[node_interested])
+        # restore the back up
+        for key in back_up:
+            self.node_output[key] = back_up[key]
+        return ret
+    
+    def get_value(self, name):
+        if name.find("|") != -1:
+            pos = name.find('|')
+            index = int(name[pos + 1:])
+            return identity([self.node_output[name[:pos]].index_of(index)])
+        else:
+            return identity([self.node_output[name].index_of(None)])
 
-    # def backward_analysis_const(self, node, range_const):
-    #     if self.node_output[node.name].value is not None:
-    #         print(range_const)
-    #         # constraints = []
-    #         # for x in self.node_output[node.name].array.block_to_symbol:
-    #         #     constraints.append(
-    #         #         meet_relation_variable(self.node_output[node.name].array.block_to_symbol[x], range_const))
-    #         #
-    #         # return z3.And(meet(self.node_output[node.name].value, range_const), z3.Or(constraints))
-    #         return meet(self.node_output[node.name].value, range_const)
-    #     else:
-    #         raise NotImplementedError
-
-    def get_left_right(self, groups: dict, node_name):
+        
+    def get_left_right(self, groups: dict, node_name, override_dict):
         left = []
         right = []
         for key in groups:
             left_ele = 0
             right_ele = 0
             group = groups[key]
-            for (name, position) in group.value:
-                pre_name = name
-                if name[:5] == magic:
-                    name = name[5:]
-                    is_relu = True
-                else:
-                    is_relu = False
-
-                if name.find("|") != -1:
-                    pos = name.find('|')
-                    index = int(name[pos + 1:])
-                    name = name[:pos]
-                else:
-                    index = None
-
-                if name == node_name:
-                    return None
-
-                value = InferValue.expanddims([self.node_output[name].index_of(index)],
-                                              self.node_by_name[name])
-                factor = group.value[(pre_name, position)]
-                if is_relu and (name, position) in group.value:
-                    non_relu_factor = group.value[(name, position)]
-                    if factor < 0 and non_relu_factor > 0:
-                        t = min(-factor, non_relu_factor)
-                        group.value[(name, position)] -= t
-                        group.value[(pre_name, position)] += t
-                        left_ele += min(0, value.left) * t
-                        right_ele += min(0, value.right) * t
-
-                    if factor > 0 and non_relu_factor < 0:
-                        t = min(factor, -non_relu_factor)
-                        group.value[(name, position)] += t
-                        group.value[(pre_name, position)] -= t
-                        left_ele += max(0, -value.right) * t
-                        right_ele += max(0, -value.left) * t
-
-                factor = group.value[(pre_name, position)]
-
+            new_relu = {}
+            
+            def get_value(name, position):
+                if name in override_dict:
+                    return override_dict[name]
+                if (name, position) in override_dict:
+                    return override_dict[(name, position)]
+                return self.get_value(name)
+                
+            def update_ele(factor, value, is_relu):
                 if is_relu:
-                    value.left = max(0, value.left)
-                    value.right = max(0, value.right)
+                    value = Range(left=max(0, value.left), right=max(0, value.right))
 
                 value = value * factor
                 if factor < 0:
                     value.left, value.right = value.right, value.left
+                return value
+            
+            for (name, position) in group.value:
+                if name[:5] == magic: # We first store relu_value
+                    new_relu[(name, position)] = group.value[(name, position)]
+                    
+                
+            for (name, position) in group.value:
+                if name[:5] == magic: # We then skip relu_value
+                    continue
+                
+                if name == node_name:
+                    if name in override_dict or (name, position) in override_dict:
+                        return get_value(name, position)
+                    return None
+                
+                value = get_value(name, position)
+                
+                if value is None: ## only happens when self.node_output[name].index_of(index) is a zero-size array.
+                    continue
+                    
+                value = Range(left=value.left, right=value.right)
+                
+                non_relu_factor = group.value[(name, position)]
+                relu_name = magic + name
+                # we first del the key,value pair in the dict
+                if (relu_name, position) in group.value:
+                    relu_factor = group.value[(relu_name, position)]
+                else:
+                    relu_factor = 0
+
+                # this will be encountered second
+                if relu_factor < 0 and non_relu_factor > 0:
+                    t = min(-relu_factor, non_relu_factor)
+                    non_relu_factor -= t # sub back the non_relu_factor
+                    relu_factor += t # add back the relu_factor
+                    left_ele += min(0, value.left) * t
+                    right_ele += min(0, value.right) * t
+
+                if relu_factor > 0 and non_relu_factor < 0:
+                    t = min(relu_factor, -non_relu_factor)
+                    non_relu_factor += t # add back the non_relu_factor
+                    relu_factor -= t # sub back the relu_factor
+                    left_ele += max(0, -value.right) * t
+                    right_ele += max(0, -value.left) * t
+
+                # we add back non-zero relu_factor
+                new_relu[(relu_name, position)] = relu_factor
+
+                value = update_ele(non_relu_factor, value, False)
                 left_ele = left_ele + value.left
                 right_ele = right_ele + value.right
+            
+            for (name, position) in new_relu:
+                non_relu = name[len(magic):]
+                value = get_value(non_relu, position)
+                
+                if value is None: ## only happens when self.node_output[name].index_of(index) is a zero-size array.
+                    continue
+                    
+                value = Range(left=value.left, right=value.right)
+                value = update_ele(new_relu[(name, position)], value, True)
+                left_ele = left_ele + value.left
+                right_ele = right_ele + value.right
+                
 
             left.append(left_ele)
             right.append(right_ele)
-
+        
+        if len(left) == 0 or len(right) == 0:
+            return None
         return Range(left=min(left), right=max(right))
 
     def get_info(self):
@@ -430,17 +615,11 @@ class Graph:
             if self.node_by_name[op].op.lower() in ["variablev2", "variable", "varhandleop"]:
                 u = self.node_output[op].size
                 if self.node_by_name[op].op.lower() == "varhandleop":
-                    s = str(self.node_by_name[op].attr["shape"].shape)
-                    x = 0
-                    u = []
-                    for i in range(len(s)):
-                        if s[i] >= '0' and s[i] <= '9':
-                            x = x * 10 + ord(s[i]) - 48
-                        elif x != 0:
-                            u.append(x)
-                            x = 0
+                    u = shape_from_proto(self.node_by_name[op].attr["shape"].shape)
 
                 tmp = 1
+                if str(u) == '<unknown>':
+                    continue
                 for x in u:
                     tmp *= int(x)
                 variable_cnt += tmp

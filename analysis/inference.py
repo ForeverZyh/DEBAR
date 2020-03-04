@@ -11,7 +11,7 @@ from utils import resolve_type
 from itertools import combinations_with_replacement, product
 
 turn_on_bool = False
-
+length_unknown = 1e3
 
 def real_size(a, b):
     if str(a) == "?" and str(b) == "?":
@@ -20,6 +20,30 @@ def real_size(a, b):
         return int(b)
     else:
         return int(a)
+    
+
+def identity(args, node=None):
+    try:
+        return args[0].value if isinstance(args[0].value, Range) else Range(left=resolve_type(np.min(args[0].value)),
+                                                                            right=resolve_type(np.max(args[0].value)))
+    except: # if it is not able to get the range (e.g., it is a zero-size array)
+        return None
+    
+    
+def packtorange(args, node):
+    maxs = []
+    mins = []
+    for arg in args:
+        if isinstance(arg.value, Range):
+            maxs.append(arg.value.right)
+            mins.append(arg.value.left)
+        elif arg.value.size > 0:
+            maxs.append(resolve_type(np.max(arg.value)))
+            mins.append(resolve_type(np.min(arg.value)))
+            
+    if None in maxs or None in mins:
+        return None
+    return Range(left=np.min(mins), right=np.max(maxs))
 
 
 def dumy():
@@ -35,17 +59,91 @@ def safeexp(X):
         return np.array(ans)
     except:
         return min(math.exp(min(X, UPPER_BOUND)), OVERFLOW_LIMIT)
+    
+def safesqrt(X):
+    try:
+        ans = []
+        for x in X:
+            if x < 0:
+                ans.append(0)
+            else:
+                ans.append(math.sqrt(x))
+        return np.array(ans)
+    except:
+        if X < 0:
+            return 0
+        else:
+            return math.sqrt(X)
+    
+def safepow(X, Y):
+    UPPER_BOUND = 100
+    try:
+        ans = []
+        for (x, y) in zip(X, Y):
+            try:
+                ans.append(min(math.pow(x, y), OVERFLOW_LIMIT))
+            except:
+                ans.append(OVERFLOW_LIMIT)
+        return np.array(ans)
+    except:
+        try:
+            return min(math.pow(X, Y), OVERFLOW_LIMIT)
+        except:
+            return OVERFLOW_LIMIT
+    
+def safelgamma(X):
+    try:
+        ans = []
+        for x in X:
+            if x <= UNDERFLOW_LIMIT:
+                ans.append(OVERFLOW_LIMIT)
+            else:
+                ans.append(math.lgamma(x))
+        return np.array(ans)
+    except:
+        if X <= UNDERFLOW_LIMIT:
+            return OVERFLOW_LIMIT
+        else:
+            return math.lgamma(X)
 
-
+def safesoftplus(X):
+    UPPER_BOUND = 100
+    try:
+        ans = []
+        for x in X:
+            if X > UPPER_BOUND:
+                ans.append(X)
+            else:
+                ans.append(np.log1p(np.exp(X)))
+        return np.array(ans)
+    except:
+        if X > UPPER_BOUND:
+            return X
+        else:
+            return np.log1p(np.exp(X))
+            
 class InferValue:
+    @staticmethod
+    def abs(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            left_sq = np.abs(args[0].value.left)
+            right_sq = np.abs(args[0].value.right)
+            min_sq = min(left_sq, right_sq)
+            max_sq = max(left_sq, right_sq)
+            cond = args[0].value.left <= 0 and args[0].value.right >= 0
+            return Range(left=0 if cond else min_sq, right=max_sq)
+        else:
+            return np.abs(args[0].value)
+        
     @staticmethod
     def add(args: list, node):
         assert len(args) == 2
         if args[0].value is None or args[1].value is None:
             return None
         if isinstance(args[0].value, Range) or isinstance(args[1].value, Range):
-            x = InferValue.expanddims([args[0]], node)
-            y = InferValue.expanddims([args[1]], node)
+            x = identity([args[0]], node)
+            y = identity([args[1]], node)
             return Range(left=x.left + y.left, right=x.right + y.right)
         else:
             return args[0].value + args[1].value
@@ -64,7 +162,7 @@ class InferValue:
     @staticmethod
     def all(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), True,
@@ -75,7 +173,7 @@ class InferValue:
     @staticmethod
     def any(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), True,
@@ -89,7 +187,7 @@ class InferValue:
         try:
             return Range(left=0, right=int(args[0].size[int(args[1].value)]) - 1)
         except:
-            return Range(left=0, right=OVERFLOW_LIMIT)
+            return Range(left=0, right=length_unknown)
 
     @staticmethod
     def assign(args: list, node):
@@ -100,25 +198,27 @@ class InferValue:
             return args[0].value
 
     def assignadd(args: list, node):
-        y = InferValue.expanddims([args[1]], node)
-        if y.left == 0:
-            args[0].value.left = 0
-        elif y.left < 0:
-            args[0].value.left = -OVERFLOW_LIMIT
-        else:
-            args[0].value.left = y.left
-        if y.right == 0:
-            args[0].value.right = 0
-        elif y.right > 0:
-            args[0].value.right = OVERFLOW_LIMIT
-        else:
-            args[0].value.right = y.right
-        return args[0].value
+        y = identity([args[1]], node)
+        tmp = dumy()
+        if y.left >= 0:
+            tmp.left = args[0].value.left
+        if y.right <= 0:
+            tmp.right = args[0].value.right
+        return tmp
+    
+    def assignsub(args: list, node):
+        y = identity([args[1]], node)
+        tmp = dumy()
+        if y.left <= 0:
+            tmp.left = args[0].value.left
+        if y.right >= 0:
+            tmp.right = args[0].value.right
+        return tmp
 
     @staticmethod
     def avgpool(args: list, node):
         assert len(args) == 1
-        return InferValue.expanddims(args, node)
+        return identity(args, node)
 
     @staticmethod
     def batchmatmul(args: list, node):
@@ -128,6 +228,16 @@ class InferValue:
         x.size = x.size[1:]
         y.size = y.size[1:]
         return InferValue.matmul([x, y], node)
+    
+    @staticmethod
+    def batchtospacend(args: list, node):
+        assert len(args) == 3
+        return args[0].value
+    
+    @staticmethod
+    def spacetobatchnd(args: list, node):
+        assert len(args) == 3
+        return args[0].value
 
     @staticmethod
     def biasadd(args: list, node):
@@ -136,42 +246,34 @@ class InferValue:
         # ind = real_size(args[0].size[-1], args[1].size[0])
         return Range(left=args[0].value.left + args[1].value.left,
                      right=args[0].value.right + args[1].value.right)
+    
+    @staticmethod
+    def broadcastargs(args: list, node):
+        assert len(args) == 2
+        return args[0].value
 
     @staticmethod
     def cast(args: list, node):
+        # tf.int64: 9; tf.int32: 3; tf.int16: 5; tf.int8: 6; 
+        # tf.uint64: 23; tf.uint32: 22; tf.uint16: 17; tf.uint8: 4; 
+        # tf.float64 2; tf.float32: 1; tf.float16: 19; 
+        # tf.bool: 10; 
         assert len(args) == 1
+        bool_proto = [10]
+        int_proto = [9, 3, 5, 6] + [23, 22, 17, 4]
+        float_proto = [2, 1, 19]
         attrs = node.attr
-        if int(attrs['SrcT'].type) in [3] and int(attrs['DstT'].type) in [1]:
-            if isinstance(args[0].value, Range):
-                return args[0].value
-            else:
-                try:
-                    return float(args[0].value)
-                except:
-                    return Range(left=float(np.min(args[0].value)), right=float(np.max(args[0].value)))
-        elif int(attrs['SrcT'].type) in [10] and int(attrs['DstT'].type) in [1]:
-            # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
-            #                         z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 0)),
-            #              right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
-            #                          z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 1)))
+        if int(attrs['SrcT'].type) in bool_proto and int(attrs['DstT'].type) in int_proto + float_proto:
             return Range(left=0, right=1)
-        elif int(attrs['SrcT'].type) in [10] and int(attrs['DstT'].type) in [3]:
-            # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
-            #                         z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 0)),
-            #              right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), 0,
-            #                          z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), 1, 1)))
-            return Range(left=0, right=1)
-        elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [10]:
-            # return Range(left=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True,
-            #                         z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False, True)),
-            #              right=z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), False,
-            #                          z3.If(z3.And(args[0].value.left == 0, args[0].value.right == 0), True, True)))
-            return Range(left=True, right=True)
-        elif int(attrs['SrcT'].type) in [9] and int(attrs['DstT'].type) in [3]:
+        elif int(attrs['SrcT'].type) in int_proto + float_proto and int(attrs['DstT'].type) in [10]:
+            return Range(left=False, right=True)
+        elif int(attrs['SrcT'].type) in int_proto and int(attrs['DstT'].type) in int_proto:
             return args[0].value
-        elif int(attrs['SrcT'].type) in [3] and int(attrs['DstT'].type) in [9]:
+        elif int(attrs['SrcT'].type) in float_proto and int(attrs['DstT'].type) in float_proto:
             return args[0].value
-        elif int(attrs['SrcT'].type) in [1] and int(attrs['DstT'].type) in [3]:
+        elif int(attrs['SrcT'].type) in int_proto and int(attrs['DstT'].type) in float_proto:
+            return args[0].value
+        elif int(attrs['SrcT'].type) in float_proto and int(attrs['DstT'].type) in int_proto:
             return InferValue.floor(args, node)
         else:
             raise NotImplementedError("%s -> %s not implemented!" % (attrs['SrcT'].type, attrs['DstT'].type))
@@ -180,6 +282,10 @@ class InferValue:
     def checknumerics(args: list, node):
         assert len(args) == 1
         return args[0].value
+    
+    @staticmethod
+    def cholesky(args: list, node):
+        return dumy()
 
     @staticmethod
     def clipbyvalue(args: list, node):
@@ -191,11 +297,20 @@ class InferValue:
                                    float(args[2].value) if not isinstance(args[2].value, Range) else args[
                                        2].value.right))
         else:
-            return min(max(args[0].value, args[1].value), args[2].value)
+            return np.minimum(np.maximum(args[0].value, args[1].value), args[2].value)
 
     @staticmethod
     def concatv2(args: list, node):
-        return InferValue.pack(args[:-1], node)
+        any_range = False
+        for x in args:
+            if isinstance(x.value, Range):
+                any_range = True
+                break
+                
+        if not any_range:
+            return np.concatenate([x.value for x in args[:-1]], axis=np.int32(args[-1].value))
+        else:
+            return packtorange(args[:-1], node)
 
     @staticmethod
     def const(args: list, node):
@@ -208,11 +323,16 @@ class InferValue:
         ind = 1
         for x in args[1].size[:-1]:
             ind *= int(x)
-        x = InferValue.expanddims([args[0]], node)
-        y = InferValue.expanddims([args[1]], node)
+        x = identity([args[0]], node)
+        y = identity([args[1]], node)
         ends = [x.left * y.left * ind, x.left * y.right * ind,
                 x.right * y.left * ind, x.right * y.right * ind]
         return Range(left=min(ends), right=max(ends))
+    
+    @staticmethod
+    def conv2dbackpropinput(args: list, node):
+        return Range(left=-1,right=1)
+        return getattr(parse_format_text, "variablev2")(node)
 
     @staticmethod
     def depthwiseconv2dnative(args: list, node):
@@ -223,12 +343,18 @@ class InferValue:
         ends = [args[0].value.left * args[1].value.left * ind, args[0].value.left * args[1].value.right * ind,
                 args[0].value.right * args[1].value.left * ind, args[0].value.right * args[1].value.right * ind]
         return Range(left=min(ends), right=max(ends))
+    
+    @staticmethod
+    def diag(args: list, node):
+        assert len(args) == 1
+        tmp = packtorange(args, node)
+        return Range(left=min(0, tmp.left), right=max(0, tmp.right))
 
     @staticmethod
     def dynamicstitch(args: list, node):
         assert len(args) % 2 == 0
         datas = args[len(args) // 2:]
-        return InferValue.pack(datas, node)
+        return packtorange(datas, node)
 
     @staticmethod
     def enter(args: list, node):
@@ -238,14 +364,14 @@ class InferValue:
     @staticmethod
     def equal(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
         #     return np.equal(args[0].value, args[1].value)
         # else:
-        #     x = InferValue.expanddims([args[0]], node)
-        #     y = InferValue.expanddims([args[1]], node)
+        #     x = identity([args[0]], node)
+        #     y = identity([args[1]], node)
         #     condition = z3.And(x.left == y.left, x.right == y.right, x.left == x.right)
         #     return Range(left=z3.If(condition, False, True), right=z3.If(condition, True, True))
 
@@ -255,13 +381,24 @@ class InferValue:
 
     @staticmethod
     def expanddims(args: list, node):
-        return args[0].value if isinstance(args[0].value, Range) else Range(left=resolve_type(np.min(args[0].value)),
-                                                                            right=resolve_type(np.max(args[0].value)))
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            return np.expand_dims(args[0].value, axis=np.int32(args[1].value))
+        else:
+            return identity(args, node)
+        
+    @staticmethod
+    def fifoqueuev2(args: list, node):
+        return InferValue.randomshufflequeuev2(args, node)
 
     @staticmethod
     def fill(args: list, node):
         assert len(args) == 2
-        return args[1].value
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            ret = np.empty(args[0].value)
+            ret.fill(args[1].value)
+            return ret
+        else:
+            return identity([args[1]])
 
     @staticmethod
     def floor(args: list, node):
@@ -278,13 +415,13 @@ class InferValue:
         epsilon = float(node.attr['epsilon'].f)
         is_training = node.attr["is_training"].b
 
-        x = InferValue.expanddims([args[0]], node)
-        mean = InferValue.expanddims([args[1]], node)
-        variance = InferValue.expanddims([args[2]], node) + epsilon
+        x = identity([args[0]], node)
+        mean = identity([args[1]], node)
+        variance = identity([args[2]], node) + epsilon
 
         if not is_training:
-            offset = InferValue.expanddims([args[3]], node)
-            scale = InferValue.expanddims([args[4]], node)
+            offset = identity([args[3]], node)
+            scale = identity([args[4]], node)
             ends_scale_variance = [scale.left / variance.left, scale.right / variance.left,
                                    scale.left / variance.right,
                                    scale.right / variance.right]
@@ -305,19 +442,19 @@ class InferValue:
     @staticmethod
     def gatherv2(args: list, node):
         assert len(args) == 3
-        return InferValue.expanddims(args, node)
+        return identity(args, node)
 
     @staticmethod
     def greater(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
         #     return np.greater(args[0].value, args[1].value)
         # else:
-        #     x = InferValue.expanddims([args[0]], node)
-        #     y = InferValue.expanddims([args[1]], node)
+        #     x = identity([args[0]], node)
+        #     y = identity([args[1]], node)
         #     return Range(left=z3.If(x.left > y.right, False, z3.If(x.right <= y.left, True, True)),
         #                  right=z3.If(x.left > y.right, True, z3.If(x.right <= y.left, False, True))
         #                  )
@@ -325,20 +462,25 @@ class InferValue:
     @staticmethod
     def greaterequal(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
         #     return np.greater_equal(args[0].value, args[1].value)
         # else:
-        #     x = InferValue.expanddims([args[0]], node)
-        #     y = InferValue.expanddims([args[1]], node)
+        #     x = identity([args[0]], node)
+        #     y = identity([args[1]], node)
         #     return Range(left=z3.If(x.left >= y.right, False, z3.If(x.right < y.left, True, True)),
         #                  right=z3.If(x.left >= y.right, True, z3.If(x.right < y.left, False, True))
         #                  )
 
     @staticmethod
     def identity(args: list, node):
+        assert len(args) == 1
+        return args[0].value
+    
+    @staticmethod
+    def isfinite(args: list, node):
         assert len(args) == 1
         return args[0].value
 
@@ -351,31 +493,59 @@ class InferValue:
     def iteratorv2(args: list, node):
         assert len(args) == 0
         return getattr(parse_format_text, node.op.lower())(node)
+    
+    @staticmethod
+    def leakyrelu(args: list, node):
+        assert len(args) == 1
+        alpha = node.attr["alpha"].f
+        def leaky_relu(x):
+            if x >=0:
+                return x
+            else:
+                return alpha * x
+        if isinstance(args[0].value, Range):
+            return Range(left=leaky_relu(args[0].value.left), right=leaky_relu(args[0].value.right))
+        else:
+            return leaky_relu(args[0].value)
+    
+    @staticmethod
+    def l2loss(args: list, node):
+        assert len(args) == 1
+        return InferValue.square(args, node) * 0.5
 
     @staticmethod
     def less(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
-        # assert len(args) == 2
-        # if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
-        #     return np.less(args[0].value, args[1].value)
-        # else:
-        #     x = InferValue.expanddims([args[0]], node)
-        #     y = InferValue.expanddims([args[1]], node)
-        #     return Range(left=z3.If(x.left >= y.right, True, z3.If(x.right < y.left, False, True)),
-        #                  right=z3.If(x.left >= y.right, False, z3.If(x.right < y.left, True, True))
-        #                  )
-
+    
+    @staticmethod
+    def lessequal(args: list, node):
+        if not turn_on_bool:
+            return Range(left=False, right=True)
+        raise NotImplementedError
+    
+    @staticmethod
+    def lgamma(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            ends = [safelgamma(args[0].value.left), safelgamma(args[0].value.right)]
+            return Range(left=min(ends), right=max(ends))
+        else:
+            return safelgamma(args[0].value)
+    
     @staticmethod
     def linspace(args: list, node):
         assert len(args) == 3
-        return np.linspace(args[0].value, args[1].value, args[2].value)
+        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range) or isinstance(args[2].value, Range):
+            return packtorange(args[:-1], node)
+        else:
+            return np.linspace(args[0].value, args[1].value, args[2].value)
 
     @staticmethod
     def logicaland(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if args[0].value is None or args[1].value is None:
@@ -390,7 +560,7 @@ class InferValue:
     @staticmethod
     def logicalnot(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 1
         # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), False,
@@ -401,7 +571,7 @@ class InferValue:
     @staticmethod
     def logicalor(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
         # assert len(args) == 2
         # if args[0].value is None or args[1].value is None:
@@ -427,20 +597,53 @@ class InferValue:
 
     @staticmethod
     def matmul(args: list, node):
-        assert len(args) == 2 and len(args[0].size) == len(args[1].size)
+        assert len(args) == 2
+        try:
+            len(args[0].size) == len(args[1].size)
+        except:
+            return dumy()
+        assert len(args[0].size) == len(args[1].size)
         for i in range(len(args[0].size) - 2):
             assert str(args[0].size[i]) == "?" or str(args[1].size[i]) == "?" or args[0].size[i] == args[1].size[i]
         ind = real_size(args[0].size[-1], args[1].size[-2])
         if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
             return np.matmul(args[0].value, args[1].value)
         else:
-            x = InferValue.expanddims([args[0]], node)
-            y = InferValue.expanddims([args[1]], node)
+            x = identity([args[0]], node)
+            y = identity([args[1]], node)
             ends = [x.left * y.left * ind, x.left * y.right * ind, x.right * y.left * ind, x.right * y.right * ind]
             return Range(left=min(ends), right=max(ends))
+        
+    @staticmethod
+    def matrixdiag(args: list, node):
+        assert len(args) == 1
+        tmp = packtorange(args, node)
+        return Range(left=min(0, tmp.left), right=max(0, tmp.right))
+        
+        
+    @staticmethod
+    def matrixbandpart(args: list, node):
+        assert len(args) == 3
+        tmp = packtorange(args[:1], node)
+        return Range(left=min(tmp.left, 0), right=max(tmp.right, 0))
+    
+    @staticmethod
+    def matrixdiagpart(args: list, node):
+        assert len(args) == 1
+        return args[0].value
 
     @staticmethod
     def max(args: list, node):
+        assert len(args) == 2
+        return args[0].value
+
+    @staticmethod
+    def maxpool(args: list, node):
+        assert len(args) == 1
+        return args[0].value
+
+    @staticmethod
+    def maximum(args: list, node):
         assert len(args) == 2
         x = args[0].value
         y = args[1].value
@@ -455,22 +658,13 @@ class InferValue:
             return Range(left=max(x.left, y), right=max(x.right, y))
 
     @staticmethod
-    def maxpool(args: list, node):
-        assert len(args) == 1
-        return args[0].value
-
-    @staticmethod
-    def maximum(args: list, node):
-        return InferValue.max(args, node)
-
-    @staticmethod
     def mean(args: list, node):
         assert len(args) == 2
-        return InferValue.expanddims(args, node)
+        return identity(args, node)
 
     @staticmethod
     def merge(args: list, node):
-        tmp = InferValue.pack(args, node)
+        tmp = packtorange(args, node)
         max_index = int(node.attr["N"].i)
         return_index = Range(left=0, right=max_index - 1)
         if isinstance(tmp, tuple):
@@ -480,6 +674,11 @@ class InferValue:
 
     @staticmethod
     def min(args: list, node):
+        assert len(args) == 2
+        return args[0].value
+
+    @staticmethod
+    def minimum(args: list, node):
         assert len(args) == 2
         x = args[0].value
         y = args[1].value
@@ -494,21 +693,21 @@ class InferValue:
             return Range(left=min(x.left, y), right=min(x.right, y))
 
     @staticmethod
-    def minimum(args: list, node):
-        return InferValue.min(args, node)
-
-    @staticmethod
     def mul(args: list, node):
         assert len(args) == 2
         if args[0].value is None or args[1].value is None:
             return None
         if isinstance(args[1].value, Range) or isinstance(args[0].value, Range):
-            x = InferValue.expanddims([args[0]], node)
-            y = InferValue.expanddims([args[1]], node)
+            x = identity([args[0]], node)
+            y = identity([args[1]], node)
             ends = [x.left * y.left, x.left * y.right, x.right * y.left, x.right * y.right]
             return Range(left=min(ends), right=max(ends))
         else:
             return args[0].value * args[1].value
+        
+    def multinomial(args: list, node):
+        assert len(args) == 2
+        return Range(left=0, right=1)
 
     @staticmethod
     def neg(args: list, node):
@@ -525,12 +724,12 @@ class InferValue:
             ind = int(args[1].size[0])
             return Range(left=0, right=ind - 1)
         except:
-            return Range(left=0, right=OVERFLOW_LIMIT)
+            return Range(left=0, right=length_unknown)
 
     @staticmethod
     def notequal(args: list, node):
         if not turn_on_bool:
-            return Range(left=True, right=True)
+            return Range(left=False, right=True)
         raise NotImplementedError
 
     @staticmethod
@@ -546,45 +745,75 @@ class InferValue:
 
     @staticmethod
     def pack(args: list, node):
-        try:
-            maxs = [args[i].value.right if isinstance(args[i].value, Range) else resolve_type(np.max(args[i].value)) for
-                    i in range(len(args))]
-            mins = [args[i].value.left if isinstance(args[i].value, Range) else resolve_type(np.min(args[i].value)) for
-                    i in range(len(args))]
-            if None in maxs or None in mins:
-                return None
-            return Range(left=min(mins), right=max(maxs))
-        except:
-            # boolean
-            # has_zero = []
-            # has_one = []
-            # for i in range(len(args)):
-            #     if isinstance(args[i].value, Range):
-            #         has_zero.append(args[i].value.left)
-            #         has_one.append(args[i].value.right)
-            #     else:
-            #         has_zero.append(not bool(np.all(args[i].value)))
-            #         has_one.append(bool(np.any(args[i].value)))
-            # return Range(left=z3.Or(has_zero), right=z3.Or(has_one))
-            return Range(left=True, right=True)
+        any_range = False
+        for x in args:
+            if isinstance(x.value, Range):
+                any_range = True
+                break
+                
+        if not any_range:
+            return np.stack([x.value for x in args], axis=int(node.attr["axis"].i))
+        else:
+            return packtorange(args, node)
 
     @staticmethod
     def pad(args: list, node):
-        return InferValue.expanddims(args, node)
+        return identity(args, node)
 
     @staticmethod
     def paddingfifoqueuev2(args: list, node):
         return InferValue.randomshufflequeuev2(args, node)
-
+    
+    @staticmethod
+    def parsesingleexample(args: list, node):
+        assert len(args) == 3
+        return [Range(left=0, right=length_unknown) for _ in range(20)]
+        
     @staticmethod
     def placeholder(args: list, node):
         assert len(args) == 0
         return getattr(parse_format_text, node.op.lower())(node)
+    
+    @staticmethod
+    def placeholderwithdefault(args: list, node):
+        assert len(args) == 1
+        tmp = getattr(parse_format_text, 'placeholder')(node)
+        if isinstance(args[0].value, Range):
+            return Range(left=min(args[0].value.left, tmp.left), right=max(args[0].value.right, tmp.right))
+        else:
+            return Range(left=min(args[0].value, tmp.left), right=max(args[0].value, tmp.right))
+    
+    @staticmethod
+    def pow(args: list, node):
+        assert len(args) == 2
+        if isinstance(args[0].value, Range) and isinstance(args[1].value, Range):
+            return Range(left=safepow(args[0].value.left, args[1].value.left), right=safepow(args[0].value.right, args[1].value.right))
+        elif isinstance(args[0].value, Range):
+            return Range(left=safepow(args[0].value.left, args[1].value), right=safepow(args[0].value.right, args[1].value))
+        elif isinstance(args[1].value, Range):
+            return Range(left=safepow(args[0].value, args[1].value.left), right=safepow(args[0].value, args[1].value.right))
+        else:
+            return safepow(args[0].value, args[1].value)
 
     @staticmethod
     def prod(args: list, node):
         assert len(args) == 2
-        return InferValue.mul(args, node)
+        if args[0].value is None:
+            return None
+        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range):
+            try:
+                ind = int(args[0].size[int(args[1].value)])
+                return Range(left=safepow(args[0].value.left, ind), right=safepow(args[0].value.right, ind))
+            except:
+                ind = Range(left=0, right=length_unknown)
+                t = InferValue.pow([args[0], AbstractInterpretation(value=ind, dtype=3, size=[])], node)
+                if isinstance(t, tuple):
+                    raise AssertionError
+                else:
+                    return t
+        else:
+            axises = np.int32(args[1].value)
+            return np.prod(args[0].value, axis=tuple(axises) if len(axises.shape) > 0 else axises)
 
     @staticmethod
     def queuedequeuemanyv2(args: list, node):
@@ -594,12 +823,12 @@ class InferValue:
     @staticmethod
     def randomshuffle(args: list, node):
         assert len(args) == 1
-        return InferValue.expanddims(args, node)
+        return identity(args, node)
 
     @staticmethod
     def randomshufflequeuev2(args: list, node):
         assert len(args) == 0
-        return getattr(parse_format_text, "placeholder")(node)
+        return getattr(parse_format_text, "oneshotiterator")(node)
 
     @staticmethod
     def randomstandardnormal(args: list, node):
@@ -614,9 +843,19 @@ class InferValue:
     @staticmethod
     def range(args: list, node):
         assert len(args) == 3
-        left = args[0].value.left if isinstance(args[0].value, Range) else int(args[0].value)
-        right = args[1].value.right if isinstance(args[1].value, Range) else int(args[1].value)
-        return Range(left=left, right=right)
+        all_single_np = True
+        for arg in args:
+            if isinstance(arg.value, Range) or len(np.array(arg.value).shape) > 0:
+                all_single_np = False
+                break
+                
+        if not all_single_np:
+            left = args[0].value.left if isinstance(args[0].value, Range) else np.min(args[0].value)
+            right = args[1].value.right if isinstance(args[1].value, Range) else np.max(args[1].value)
+            return Range(left=left, right=right)
+        else:
+            return np.arange(args[0].value, args[1].value, args[2].value)
+        
 
     @staticmethod
     def rank(args: list, node):
@@ -624,7 +863,7 @@ class InferValue:
         try:
             return int(args[0].size)
         except:
-            return Range(left=1, right=OVERFLOW_LIMIT)
+            return Range(left=1, right=length_unknown)
 
     @staticmethod
     def readvariableop(args: list, node):
@@ -634,27 +873,28 @@ class InferValue:
     @staticmethod
     def realdiv(args: list, node):
         assert len(args) == 2
-        try:
-            x = float(args[0].value)
-        except:
-            x = InferValue.expanddims([args[0]], node)
-        try:
-            y = float(args[1].value)
-        except:
-            y = InferValue.expanddims([args[1]], node)
-
+        x = args[0].value
+        y = args[1].value
+        if not isinstance(x, Range):
+            x = np.reshape(x, -1)
+        if not isinstance(y, Range):
+            y = np.reshape(y, -1)
         if isinstance(x, Range) and isinstance(y, Range):
             if y.left > 0 or y.right < 0:
                 ends = [x.left / y.left, x.left / y.right, x.right / y.left, x.right / y.right]
-                return Range(left=min(ends), right=max(ends))
+                return Range(left=np.min(ends), right=np.max(ends))
             else:
                 return Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT)
-        elif not isinstance(y, Range):
-            return x * (1 / y)
-        else:
+        elif not isinstance(y, Range): # x can be a Range or a np.array
+            if isinstance(x, Range):
+                ends = [x.left / yy for yy in y] + [x.right / yy for yy in y]
+                return Range(left=np.min(ends), right=np.max(ends))
+            else:
+                return x * (1 / y)
+        else: # if y is a Range, whatever x is, we have to end up with a Range, but we can do it precisely when x is a float
             if y.left > 0 or y.right < 0:
-                ends = [x / y.left, x / y.right]
-                return Range(left=min(ends), right=max(ends))
+                ends = [xx / y.left for xx in x] + [xx / y.right for xx in x]
+                return Range(left=np.min(ends), right=np.max(ends))
             else:
                 return Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT)
 
@@ -673,27 +913,55 @@ class InferValue:
     @staticmethod
     def reshape(args: list, node):
         assert len(args) == 2
-        return InferValue.expanddims(args, node)
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            return np.reshape(args[0].value, np.int32(args[1].value))
+        else:
+            return identity(args, node)
+        
+    @staticmethod
+    def resizearea(args: list, node):
+        assert len(args) == 2
+        return args[0].value
 
     @staticmethod
     def resizebilinear(args: list, node):
         assert len(args) == 2
         return args[0].value
+    
+    @staticmethod
+    def resizenearestneighbor(args: list, node):
+        assert len(args) == 2
+        return args[0].value
+    
+    @staticmethod
+    def resourcegather(args: list, node):
+        assert len(args) == 2
+        return identity(args, node)
 
     @staticmethod
     def reversev2(args: list, node):
         assert len(args) == 2
-        return InferValue.expanddims(args, node)
+        return identity(args, node)
 
+    @staticmethod
+    def round(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            return Range(left=np.round(args[0].value.left), right=np.round(args[0].value.right))
+        return np.round(args[0].value)
+    
     @staticmethod
     def rsqrt(args: list, node):
         assert len(args) == 1
         if isinstance(args[0].value, Range):
-            left = math.sqrt(args[0].value.left)
-            right = math.sqrt(args[0].value.right)
-            return Range(left=1 / right, right=1 / left)
+            left = safesqrt(args[0].value.left)
+            right = safesqrt(args[0].value.right)
+            if left == 0 or right == 0:
+                return dumy()
+            else:
+                return Range(left=1 / right, right=1 / left)
         else:
-            return 1 / math.sqrt(args[0].value)
+            return 1 / safesqrt(args[0].value)
 
     @staticmethod
     def select(args: list, node):
@@ -701,17 +969,13 @@ class InferValue:
         if not isinstance(args[0].value, Range):
             # print(args[0].value)
             raise NotImplementedError("not implemented when the condition is known")
-        x = InferValue.expanddims([args[1]], node)
-        y = InferValue.expanddims([args[2]], node)
+        
+        x = identity([args[1]], node)
+        y = identity([args[2]], node)
         if not turn_on_bool:
             return Range(left=min(x.left, y.left), right=max(x.right, y.right))
         raise NotImplementedError
-        # return Range(left=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), x.left,
-        #                         z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), y.left,
-        #                               z3.If(x.left < y.left, x.left, y.left))),
-        #              right=z3.If(z3.And(args[0].value.left, z3.Not(args[0].value.right)), x.right,
-        #                          z3.If(z3.And(args[0].value.right, z3.Not(args[0].value.left)), y.right,
-        #                                z3.If(x.right > y.right, x.right, y.right))))
+
 
     @staticmethod
     def shape(args: list, node):
@@ -719,8 +983,16 @@ class InferValue:
         try:
             return [int(x) for x in args[0].size]
         except:
-            return Range(left=1, right=OVERFLOW_LIMIT)
-
+            return Range(left=1, right=length_unknown)
+        
+    @staticmethod
+    def sign(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            return Range(left=np.sign(args[0].value.left), right=np.sign(args[0].value.right))
+        else:
+            return np.sign(args[0].value)
+        
     @staticmethod
     def size(args: list, node):
         assert len(args) == 1
@@ -729,46 +1001,51 @@ class InferValue:
             for x in args[0].size:
                 ele *= int(x)
             if ele < 0:
-                return Range(left=0, right=OVERFLOW_LIMIT)
+                return Range(left=0, right=length_unknown)
             else:
                 return ele
         except:
-            return Range(left=0, right=OVERFLOW_LIMIT)
+            return Range(left=0, right=length_unknown)
 
     @staticmethod
     def slice(args: list, node):
-        return InferValue.expanddims(args, node)
+        assert len(args) == 3
+        try:
+            return args[0].value[tuple(slice(a, a + b) if b >= 0 else slice(a, None) for a, b in zip(args[1].value, args[2].value))]
+        except:
+            return identity(args, node)
+        
+    @staticmethod
+    def sparsetodense(args: list, node):
+        assert len(args) == 4
+        return Range(left=0, right=1)
 
     @staticmethod
     def split(args: list, node):
         assert len(args) == 2
         nums = int(node.attr["num_split"].i)
         if nums == 1:
-            return InferValue.expanddims(args[1:], node)
+            return identity(args[1:], node)
         else:
-            return [InferValue.expanddims(args[1:], node) for _ in range(nums)]
+            return [identity(args[1:], node) for _ in range(nums)]
 
     @staticmethod
     def sqrt(args: list, node):
         assert len(args) == 1
         if isinstance(args[0].value, Range):
-            left = math.sqrt(args[0].value.left)
-            right = math.sqrt(args[0].value.right)
+            left = safesqrt(args[0].value.left)
+            right = safesqrt(args[0].value.right)
 
             return Range(left=left, right=right)
         else:
-            return np.sqrt(args[0].value)
+            return safesqrt(args[0].value)
 
     @staticmethod
     def square(args: list, node):
         assert len(args) == 1
         if isinstance(args[0].value, Range):
-            left_sq = args[0].value.left * args[0].value.left
-            right_sq = args[0].value.right * args[0].value.right
-            min_sq = min(left_sq, right_sq)
-            max_sq = max(left_sq, right_sq)
-            cond = args[0].value.left <= 0 and args[0].value.right >= 0
-            return Range(left=0 if cond else min_sq, right=max_sq)
+            abs_value = InferValue.abs(args, node)
+            return Range(left=abs_value.left * abs_value.left, right=abs_value.right * abs_value.right)
         else:
             return args[0].value * args[0].value
 
@@ -782,7 +1059,7 @@ class InferValue:
     @staticmethod
     def squeeze(args: list, node):
         assert len(args) == 1
-        return InferValue.expanddims(args, node)
+        return identity(args, node)
 
     @staticmethod
     def stopgradient(args: list, node):
@@ -790,14 +1067,14 @@ class InferValue:
 
     @staticmethod
     def stridedslice(args: list, node):
-        return InferValue.expanddims(args, node)
+        return identity(args, node)
 
     @staticmethod
     def sub(args: list, node):
         assert len(args) == 2
         if isinstance(args[0].value, Range) or isinstance(args[1].value, Range):
-            x = InferValue.expanddims([args[0]], node)
-            y = InferValue.expanddims([args[1]], node)
+            x = identity([args[0]], node)
+            y = identity([args[1]], node)
             return Range(left=x.left - y.right, right=x.right - y.left)
         else:
             return args[0].value - args[1].value
@@ -807,19 +1084,20 @@ class InferValue:
         assert len(args) == 2
         if args[0].value is None:
             return None
-        if isinstance(args[0].value, Range):
+        if isinstance(args[0].value, Range) or isinstance(args[1].value, Range):
             try:
                 ind = int(args[0].size[int(args[1].value)])
                 return Range(left=args[0].value.left * ind, right=args[0].value.right * ind)
             except:
-                ind = Range(left=0, right=OVERFLOW_LIMIT)
+                ind = Range(left=1, right=1e6)
                 t = InferValue.mul([args[0], AbstractInterpretation(value=ind, dtype=3, size=[])], node)
                 if isinstance(t, tuple):
                     raise AssertionError
                 else:
                     return t
         else:
-            return np.sum(args[0].value, axis=args[1].value)
+            axises = np.int32(args[1].value)
+            return np.sum(args[0].value, axis=tuple(axises) if len(axises.shape) > 0 else axises)
 
     @staticmethod
     def switch(args: list, node):
@@ -863,7 +1141,10 @@ class InferValue:
     @staticmethod
     def tile(args: list, node):
         assert len(args) == 2
-        return InferValue.expanddims(args, node)
+        if not isinstance(args[0].value, Range) and not isinstance(args[1].value, Range):
+            return np.tile(args[0].value, np.int32(args[1].value))
+        else:
+            return identity(args, node)
 
     @staticmethod
     def topkv2(args: list, node):
@@ -872,22 +1153,41 @@ class InferValue:
             ind = int(args[0].size[-1])
             value = Range(left=0, right=ind - 1)
         except:
-            value = Range(left=0, right=OVERFLOW_LIMIT)
-        return [InferValue.expanddims(args, node), value]
+            value = Range(left=0, right=length_unknown)
+        return [identity(args, node), value]
 
     @staticmethod
     def transpose(args: list, node):
         assert len(args) == 2
-        return InferValue.expanddims(args, node)
+        try:
+            return np.transpose(args[0].value, np.int32(args[1].value))
+        except:
+            return identity(args, node)
 
     @staticmethod
     def unpack(args: list, node):
         assert len(args) == 1
         nums = int(node.attr["num"].i)
-        if nums == 1:
-            return InferValue.expanddims(args, node)
+        axis = int(node.attr["axis"].i) 
+        if not isinstance(args[0].value, Range):
+            assert args[0].value.shape[axis] == nums
+            if nums == 1:
+                index = [slice(None) for _ in range(len(args[0].value.shape))]
+                index[axis] = 0
+                return args[0].value[index]
+            else:
+                ret = []
+                for i in range(nums):
+                    index = [slice(None) for _ in range(len(args[0].value.shape))]
+                    index[axis] = i
+                    ret.append(args[0].value[index])
+                    
+                return ret
         else:
-            return [InferValue.expanddims(args, node) for _ in range(nums)]
+            if nums == 1:
+                return identity(args, node)
+            else:
+                return [identity(args, node) for _ in range(nums)]
 
     @staticmethod
     def varhandleop(args: list, node):
@@ -911,11 +1211,17 @@ class InferValue:
             x = np.max(args[0].size)
             return Range(left=0, right=x - 1)
         except:
-            return Range(left=0, right=OVERFLOW_LIMIT - 1)
+            return Range(left=0, right=length_unknown - 1)
 
     @staticmethod
     def zeroslike(args: list, node):
         assert len(args) == 1
+        try:
+            if len(args[0].size) == 0:
+                return 0
+        except:
+            pass
+        
         return Range(left=0, right=0)
 
     @staticmethod
@@ -927,11 +1233,11 @@ class InferValue:
         try:
             x = float(args[0].value)
         except:
-            x = InferValue.expanddims([args[0]], node)
+            x = identity([args[0]], node)
         try:
             y = float(args[1].value)
         except:
-            y = InferValue.expanddims([args[1]], node)
+            y = identity([args[1]], node)
 
         if isinstance(x, Range) and isinstance(y, Range):
             if y.left > 0 or y.right < 0:
@@ -966,6 +1272,15 @@ class InferValue:
 
     # non linear operations:
     @staticmethod
+    def sin(args: list, node):
+        assert len(args) == 1
+        return Range(left=-1,right=1)
+    
+    def cos(args: list, node):
+        assert len(args) == 1
+        return Range(left=-1,right=1)
+    
+    @staticmethod
     def log(args: list, node):
         assert len(args) == 1
         # stride = 15
@@ -990,7 +1305,26 @@ class InferValue:
             #
             # return value, z3.And(z3.Or(constraints), value.left <= value.right)
         else:
-            return math.log(args[0].value)
+            return np.log(args[0].value)
+    
+    @staticmethod
+    def log1p(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            if args[0].value.left <= -1:
+                return Range(left=-OVERFLOW_LIMIT, right=np.log1p(args[0].value.right))
+            else:
+                return Range(left=np.log1p(args[0].value.left), right=np.log1p(args[0].value.right))
+        else:
+            return np.log1p(args[0].value)
+        
+    @staticmethod
+    def softplus(args: list, node):
+        assert len(args) == 1
+        if isinstance(args[0].value, Range):
+            return Range(left=safesoftplus(args[0].value.left), right=safesoftplus(args[0].value.right))
+        else:
+            return safesoftplus(args[0].value)
 
     @staticmethod
     def exp(args: list, node):
@@ -1013,25 +1347,32 @@ class InferValue:
             #
             # return value, z3.And(z3.Or(constraints), value.left <= value.right)
         else:
-            return math.exp(args[0].value)
+            return safeexp(args[0].value)
 
     @staticmethod
     def softmax(args: list, node):
         assert len(args) == 1
-        ind = int(args[0].size[-1])
-        assert ind > 1
+        try:
+            ind = int(args[0].size[-1])
+        except:
+            ind = None
+            
         # intervals = [(-math.inf, -90), (-90, -1), (-1, 1), (1, 90), (90, math.inf)]
         if isinstance(args[0].value, Range):
             min_ele = safeexp(args[0].value.left)
             max_ele = safeexp(args[0].value.right)
             if max_ele >= OVERFLOW_LIMIT or min_ele == 0:
                 left = 0
-            else:
+            elif ind is not None:
                 left = min_ele / ((ind - 1) * max_ele + min_ele)
+            else:
+                left = min_ele / ((length_unknown - 1) * max_ele + min_ele)
             if max_ele >= OVERFLOW_LIMIT or min_ele == 0:
                 right = 1
-            else:
+            elif ind is not None:
                 right = max_ele / ((ind - 1) * min_ele + max_ele)
+            else:
+                right = max_ele / (min_ele + max_ele)
             return Range(left=left, right=right)
         else:
             tmp_exp = np.exp(args[0].value)
@@ -1185,6 +1526,10 @@ class InferArray:
         assert len(args) > 1
         if len(args) - 1 > 10:
             return None
+        try:
+            len(args[0].size) == len(args[1].size)
+        except:
+            return None
         concat_ind = int(args[-1].value)
         for i in range(1, len(args) - 1):
             assert len(args[0].size) == len(args[i].size)
@@ -1232,22 +1577,48 @@ class InferArray:
     def zeroslike(args: list, node):
         assert len(args) == 1
         ret = Array("tmp", args[0].size)
+        if len(ret.block_to_symbol.keys()) == 0:
+            return None
         x = list(ret.block_to_symbol.keys())[-1]
         ret.block_to_symbol = {}
         ret.block_to_symbol[x] = Linear(("dumy", (0, 1)))
-        ret.block_to_symbol[x].value = {}
-        ret.block_to_symbol[x].map_to_index = {}
 
         return ret
 
     @staticmethod
-    def relu(args: list, node):
+    def relu(args: list, node): 
+        # right now it will abort when it encounters relu(z=x-y). 
+        # A better approach is to set it to relu(z) instead of aborting.
         assert len(args) == 1
         ret = copy.deepcopy(args[0].array)
         ret.block_to_symbol = {}
         for x in args[0].array.block_to_symbol:
             ret.block_to_symbol[x] = args[0].array.block_to_symbol[x].relu()
         return ret
+    
+#     @staticmethod
+#     def max(args: list, node):
+#         assert len(args) == 2
+#         axises = np.int32(args[1].value)
+#         for axis in axises:
+#             if len(args[0].array.index_slices[axis]) > 1:
+#                 return None
+#         ret = Array("tmp", args[0].size)
+#         ret.block_to_symbol = dict()
+#         index_slices = []
+#         for i in range(len(args[0].array.index_slices)):
+#             if i not in axises:
+#                 index_slices.append(args[0].array.index_slices[i])
+#         ret.index_slices = index_slices
+#         for indexes in args[0].array.block_to_symbol:
+#             ans = args[0].array.block_to_symbol[indexes]
+#             for axis in axises:
+#                 ans = ans.remove_unpack_axis(axis)
+#                 ans = ans.add_pack_ind(axis)
+            
+#             ret.block_to_symbol[indexes] = ans.Max()
+            
+#         return ret
 
     @staticmethod
     def maximum(args: list, node):
@@ -1271,20 +1642,6 @@ class InferArray:
             ret.block_to_symbol[x].neg()
 
         return ret
-
-    #
-    # @staticmethod
-    # def exp(args: list, node):
-    #     assert len(args) == 1
-    #     ret = copy.deepcopy(args[0].array)
-    #     constraints = []
-    #     for x in ret.block_to_symbol:
-    #         pre = ret.block_to_symbol[x]
-    #         now = Solver.add_variable("exp", 1)
-    #         ret.block_to_symbol[x] = now
-    #         constraints.append(z3.Or(z3.And(pre >= 0, now >= 1), z3.And(pre < 0, now < 1, now >= 0)))
-    #
-    #     return ret, z3.And(constraints)
 
     @staticmethod
     def pack(args: list, node):
