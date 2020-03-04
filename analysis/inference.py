@@ -1397,159 +1397,248 @@ class InferValue:
 
 
 class InferArray:
+    # @staticmethod
+    # def add(args: list, node):
+    #     # if len(args[1].size) == 0:
+    #     #     t = float(args[1].value)
+    #     #     ret = copy.deepcopy(args[0].array)
+    #     #     for x in ret.block_to_symbol:
+    #     #         ret.block_to_symbol[x] += t
+    #     #
+    #     #     return ret
+    #     # else:
+    #     try:
+    #         len(args[0].size) == len(args[1].size)
+    #     except:
+    #         return None
+    #     assert len(args) == 2 and len(args[0].size) == len(args[1].size)
+    #     ind = len(args[0].size)
+    #     for i in range(ind):
+    #         try:
+    #             l1 = int(args[0].size[i])
+    #         except:
+    #             l1 = -1
+    #         try:
+    #             l2 = int(args[1].size[i])
+    #         except:
+    #             l2 = -1
+    #         assert l1 == l2
+    #
+    #     ret = Array("tmp", args[0].size)
+    #     ret.block_to_symbol = dict()
+    #     ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
+    #     keys0 = args[0].array.get_corresponding_keys(ret.index_slices)
+    #     keys1 = args[1].array.get_corresponding_keys(ret.index_slices)
+    #     i = 0
+    #     for indexes in product(*ret.index_slices):
+    #         ret.block_to_symbol[tuple(indexes)] = keys0[i] + keys1[i]
+    #         i += 1
+    #
+    #     return ret
+    #
+    # def sub(args: list, node):
+    #     # if len(args[1].size) == 0:
+    #     #     t = float(args[1].value)
+    #     #     ret = copy.deepcopy(args[0].array)
+    #     #     for x in ret.block_to_symbol:
+    #     #         ret.block_to_symbol[x] -= t
+    #     #
+    #     #     return ret
+    #     # else:
+    #     try:
+    #         len(args[0].size) == len(args[1].size)
+    #     except:
+    #         return None
+    #     assert len(args) == 2 and len(args[0].size) == len(args[1].size)
+    #     ind = len(args[0].size)
+    #     for i in range(ind):
+    #         try:
+    #             l1 = int(args[0].size[i])
+    #         except:
+    #             l1 = -1
+    #         try:
+    #             l2 = int(args[1].size[i])
+    #         except:
+    #             l2 = -1
+    #         assert l1 == l2
+    #
+    #     ret = Array("tmp", args[0].size)
+    #     ret.block_to_symbol = dict()
+    #     ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
+    #     keys0 = args[0].array.get_corresponding_keys(ret.index_slices)
+    #     keys1 = args[1].array.get_corresponding_keys(ret.index_slices)
+    #     i = 0
+    #     for indexes in product(*ret.index_slices):
+    #         ret.block_to_symbol[tuple(indexes)] = keys0[i] - keys1[i]
+    #         i += 1
+    #
+    #     return ret
+
     @staticmethod
-    def add(args: list, node):
-        # if len(args[1].size) == 0:
-        #     t = float(args[1].value)
-        #     ret = copy.deepcopy(args[0].array)
-        #     for x in ret.block_to_symbol:
-        #         ret.block_to_symbol[x] += t
-        #
-        #     return ret
-        # else:
+    def concatv2(args: list, node):
+        assert len(args) > 1
+        if len(args) - 1 > 10:
+            return None
         try:
             len(args[0].size) == len(args[1].size)
         except:
             return None
-        assert len(args) == 2 and len(args[0].size) == len(args[1].size)
-        ind = len(args[0].size)
-        for i in range(ind):
-            try:
-                l1 = int(args[0].size[i])
-            except:
-                l1 = -1
-            try:
-                l2 = int(args[1].size[i])
-            except:
-                l2 = -1
-            assert l1 == l2
+        concat_ind = int(args[-1].value)
+        for i in range(1, len(args) - 1):
+            assert len(args[0].size) == len(args[i].size)
+            for j in range(len(args[i].size)):
+                try:
+                    int(args[0].size[j])
+                    int(args[i].size[j])
+                except:
+                    return None
+                if j != concat_ind:
+                    assert int(args[0].size[j]) == int(args[i].size[j])
 
         ret = Array("tmp", args[0].size)
         ret.block_to_symbol = dict()
-        ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
-        keys0 = args[0].array.get_corresponding_keys(ret.index_slices)
-        keys1 = args[1].array.get_corresponding_keys(ret.index_slices)
-        i = 0
-        for indexes in product(*ret.index_slices):
-            ret.block_to_symbol[tuple(indexes)] = keys0[i] + keys1[i]
-            i += 1
+        index_slices = []
+        for arg in args[:-1]:
+            index_slices.append(copy.deepcopy(arg.array.index_slices))
+            index_slices[-1][concat_ind] = [None]
+
+        ret.index_slices = index_slices[0]
+        for i in range(1, len(args) - 1):
+            ret.index_slices = Array.join_index_slices(ret.index_slices, index_slices[i])
+        tmp_ret_index_slices = copy.deepcopy(ret.index_slices)
+        ret.index_slices[concat_ind] = []
+        split_point = 0
+        for i in range(len(args) - 1):
+            tmp_ret_index_slices[concat_ind] = args[i].array.index_slices[concat_ind]
+            ret.index_slices[concat_ind] += list(np.array(args[i].array.index_slices[concat_ind]) + split_point)
+            tmp_keys = args[i].array.get_corresponding_keys(tmp_ret_index_slices)
+            tmp_ret_index_slices[concat_ind] = list(np.array(args[i].array.index_slices[concat_ind]) + split_point)
+            split_point += int(args[i].array.index_slices[concat_ind][-1])
+            ii = 0
+            for indexes in product(*tmp_ret_index_slices):
+                ret.block_to_symbol[tuple(indexes)] = tmp_keys[ii]
+                ii += 1
 
         return ret
-
-    def sub(args: list, node):
-        # if len(args[1].size) == 0:
-        #     t = float(args[1].value)
-        #     ret = copy.deepcopy(args[0].array)
-        #     for x in ret.block_to_symbol:
-        #         ret.block_to_symbol[x] -= t
-        #
-        #     return ret
-        # else:
-        try:
-            len(args[0].size) == len(args[1].size)
-        except:
-            return None
-        assert len(args) == 2 and len(args[0].size) == len(args[1].size)
-        ind = len(args[0].size)
-        for i in range(ind):
-            try:
-                l1 = int(args[0].size[i])
-            except:
-                l1 = -1
-            try:
-                l2 = int(args[1].size[i])
-            except:
-                l2 = -1
-            assert l1 == l2
-
-        ret = Array("tmp", args[0].size)
-        ret.block_to_symbol = dict()
-        ret.index_slices = Array.join_index_slices(args[0].array.index_slices, args[1].array.index_slices)
-        keys0 = args[0].array.get_corresponding_keys(ret.index_slices)
-        keys1 = args[1].array.get_corresponding_keys(ret.index_slices)
-        i = 0
-        for indexes in product(*ret.index_slices):
-            ret.block_to_symbol[tuple(indexes)] = keys0[i] - keys1[i]
-            i += 1
-
-        return ret
-
 
     @staticmethod
     def identity(args: list, node):
         assert len(args) == 1
         return args[0].array
 
+    # @staticmethod
+    # def zeroslike(args: list, node):
+    #     assert len(args) == 1
+    #     ret = Array("tmp", args[0].size)
+    #     if len(ret.block_to_symbol.keys()) == 0:
+    #         return None
+    #     x = list(ret.block_to_symbol.keys())[0]
+    #     ret.block_to_symbol[x].value = {}
+    #     ret.block_to_symbol[x].map_to_index = {}
+    #
+    #     return ret
+
+    # @staticmethod
+    # def relu(args: list, node):
+    #     # right now it will abort when it encounters relu(z=x-y).
+    #     # A better approach is to set it to relu(z) instead of aborting.
+    #     assert len(args) == 1
+    #     ret = copy.deepcopy(args[0].array)
+    #     ret.block_to_symbol = {}
+    #     for x in args[0].array.block_to_symbol:
+    #         ret.block_to_symbol[x] = args[0].array.block_to_symbol[x].relu()
+    #     return ret
+
+    #     @staticmethod
+    #     def max(args: list, node):
+    #         assert len(args) == 2
+    #         axises = np.int32(args[1].value)
+    #         for axis in axises:
+    #             if len(args[0].array.index_slices[axis]) > 1:
+    #                 return None
+    #         ret = Array("tmp", args[0].size)
+    #         ret.block_to_symbol = dict()
+    #         index_slices = []
+    #         for i in range(len(args[0].array.index_slices)):
+    #             if i not in axises:
+    #                 index_slices.append(args[0].array.index_slices[i])
+    #         ret.index_slices = index_slices
+    #         for indexes in args[0].array.block_to_symbol:
+    #             ans = args[0].array.block_to_symbol[indexes]
+    #             for axis in axises:
+    #                 ans = ans.remove_unpack_axis(axis)
+    #                 ans = ans.add_pack_ind(axis)
+
+    #             ret.block_to_symbol[indexes] = ans.Max()
+
+    #         return ret
+
+    # @staticmethod
+    # def maximum(args: list, node):
+    #     try:
+    #         len(args[0].size) == len(args[1].size)
+    #     except:
+    #         return None
+    #     assert len(args) == 2 and len(args[0].size) == len(args[1].size)
+    #     one_value = list(args[1].array.block_to_symbol.values())
+    #     if len(one_value) == 1 and len(one_value[0].value) == 0:
+    #         return InferArray.relu([args[0]], node)
+    #     one_value = list(args[0].array.block_to_symbol.values())
+    #     if len(one_value) == 1 and len(one_value[0].value) == 0:
+    #         return InferArray.relu([args[1]], node)
+    #
+    # @staticmethod
+    # def neg(args: list, node):
+    #     assert len(args) == 1
+    #     ret = copy.deepcopy(args[0].array)
+    #     for x in ret.block_to_symbol:
+    #         ret.block_to_symbol[x].neg()
+    #
+    #     return ret
+
     @staticmethod
-    def zeroslike(args: list, node):
-        assert len(args) == 1
+    def pack(args: list, node):
+        # return InferArray.concatv2(args + [AbstractInterpretation(value=len(args[0].size) - 1)], node)
+        assert len(args) >= 1
+        if len(args) > 10:
+            return None
+        pack_ind = int(node.attr["axis"].i)
+        for i in range(1, len(args)):
+            try:
+                len(args[0].size) == len(args[i].size)
+            except:
+                return None
+            assert len(args[0].size) == len(args[i].size)
+            for j in range(len(args[i].size)):
+                try:
+                    int(args[0].size[j])
+                    int(args[i].size[j])
+                except:
+                    return None
+                assert int(args[0].size[j]) == int(args[i].size[j])
+
         ret = Array("tmp", args[0].size)
-        if len(ret.block_to_symbol.keys()) == 0:
-            return None
-        x = list(ret.block_to_symbol.keys())[0]
-        ret.block_to_symbol[x].value = {}
-        ret.block_to_symbol[x].map_to_index = {}
+        ret.block_to_symbol = dict()
+        index_slices = []
+        for arg in args:
+            index_slices.append(copy.deepcopy(arg.array.index_slices))
+        ret.index_slices = index_slices[0]
+        for i in range(1, len(args)):
+            ret.index_slices = Array.join_index_slices(ret.index_slices, index_slices[i])
+        tmp_ret_index_slices = copy.deepcopy(ret.index_slices)
+        ret.index_slices = ret.index_slices[:pack_ind] + [[]] + ret.index_slices[pack_ind:]
+
+        for i in range(len(args)):
+            ret.index_slices[pack_ind] += [i + 1]
+            tmp_keys = args[i].array.get_corresponding_keys(tmp_ret_index_slices)
+            ii = 0
+            for indexes in product(*tmp_ret_index_slices):
+                tmp_key = list(indexes)
+                tmp_key = tmp_key[:pack_ind] + [i + 1] + tmp_key[pack_ind:]
+                ret.block_to_symbol[tuple(tmp_key)] = tmp_keys[ii].add_pack_ind(pack_ind)
+                ii += 1
 
         return ret
-
-    @staticmethod
-    def relu(args: list, node): 
-        # right now it will abort when it encounters relu(z=x-y). 
-        # A better approach is to set it to relu(z) instead of aborting.
-        assert len(args) == 1
-        ret = copy.deepcopy(args[0].array)
-        ret.block_to_symbol = {}
-        for x in args[0].array.block_to_symbol:
-            ret.block_to_symbol[x] = args[0].array.block_to_symbol[x].relu()
-        return ret
-    
-#     @staticmethod
-#     def max(args: list, node):
-#         assert len(args) == 2
-#         axises = np.int32(args[1].value)
-#         for axis in axises:
-#             if len(args[0].array.index_slices[axis]) > 1:
-#                 return None
-#         ret = Array("tmp", args[0].size)
-#         ret.block_to_symbol = dict()
-#         index_slices = []
-#         for i in range(len(args[0].array.index_slices)):
-#             if i not in axises:
-#                 index_slices.append(args[0].array.index_slices[i])
-#         ret.index_slices = index_slices
-#         for indexes in args[0].array.block_to_symbol:
-#             ans = args[0].array.block_to_symbol[indexes]
-#             for axis in axises:
-#                 ans = ans.remove_unpack_axis(axis)
-#                 ans = ans.add_pack_ind(axis)
-            
-#             ret.block_to_symbol[indexes] = ans.Max()
-            
-#         return ret
-
-    @staticmethod
-    def maximum(args: list, node):
-        try:
-            len(args[0].size) == len(args[1].size)
-        except:
-            return None
-        assert len(args) == 2 and len(args[0].size) == len(args[1].size)
-        one_value = list(args[1].array.block_to_symbol.values())
-        if len(one_value) == 1 and len(one_value[0].value) == 0:
-            return InferArray.relu([args[0]], node)
-        one_value = list(args[0].array.block_to_symbol.values())
-        if len(one_value) == 1 and len(one_value[0].value) == 0:
-            return InferArray.relu([args[1]], node)
-
-    @staticmethod
-    def neg(args: list, node):
-        assert len(args) == 1
-        ret = copy.deepcopy(args[0].array)
-        for x in ret.block_to_symbol:
-            ret.block_to_symbol[x].neg()
-
-        return ret
-
 
     @staticmethod
     def transpose(args: list, node):
@@ -1569,36 +1658,36 @@ class InferArray:
             ret.block_to_symbol[new_indexes] = args[0].array.block_to_symbol[tuple(indexes)].transpose(perm)
 
         return ret
-    #
-    # @staticmethod
-    # def unpack(args: list, node):
-    #     assert len(args) == 1
-    #     axis = int(node.attr["axis"].i)
-    #     index_slices = copy.deepcopy(args[0].array.index_slices)
-    #     try:
-    #         if int(args[0].size[axis]) > 10:
-    #             return None
-    #     except:
-    #         return None
-    #
-    #     rets = []
-    #     for i in range(int(args[0].size[axis])):
-    #         rets.append(Array("tmp", args[0].size))
-    #         rets[-1].index_slices = index_slices[:axis] + index_slices[axis + 1:]
-    #         rets[-1].block_to_symbol = {}
-    #
-    #     length = index_slices[axis][-1]
-    #     index_slices[axis] = list(range(1, length + 1))  # e.g., 4 -> [1,2,3,4]
-    #     tmp_keys = args[0].array.get_corresponding_keys(index_slices)
-    #     ii = 0
-    #     for indexes in product(*index_slices):
-    #         tmp_key = list(indexes)
-    #         which = indexes[axis] - 1
-    #         tmp_key = tmp_key[:axis] + tmp_key[axis + 1:]
-    #         rets[which].block_to_symbol[tuple(tmp_key)] = tmp_keys[ii].remove_unpack_axis(axis)
-    #         ii += 1
-    #
-    #     return rets if len(rets) > 1 else rets[0]
+
+    @staticmethod
+    def unpack(args: list, node):
+        assert len(args) == 1
+        axis = int(node.attr["axis"].i)
+        index_slices = copy.deepcopy(args[0].array.index_slices)
+        try:
+            if int(args[0].size[axis]) > 10:
+                return None
+        except:
+            return None
+
+        rets = []
+        for i in range(int(args[0].size[axis])):
+            rets.append(Array("tmp", args[0].size))
+            rets[-1].index_slices = index_slices[:axis] + index_slices[axis + 1:]
+            rets[-1].block_to_symbol = {}
+
+        length = index_slices[axis][-1]
+        index_slices[axis] = list(range(1, length + 1))  # e.g., 4 -> [1,2,3,4]
+        tmp_keys = args[0].array.get_corresponding_keys(index_slices)
+        ii = 0
+        for indexes in product(*index_slices):
+            tmp_key = list(indexes)
+            which = indexes[axis] - 1
+            tmp_key = tmp_key[:axis] + tmp_key[axis + 1:]
+            rets[which].block_to_symbol[tuple(tmp_key)] = tmp_keys[ii].remove_unpack_axis(axis)
+            ii += 1
+
+        return rets if len(rets) > 1 else rets[0]
 
     # @staticmethod
     # def split(args: list, node):
