@@ -51,7 +51,7 @@ def oneshotiterator(node):
     if len(output_shapes) > len(shapes):
         shapes = output_shapes
     if unbounded_input:
-        return [Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT) for _ in range(shapes)]
+        return [Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT) for _ in range(len(shapes))]
     value = []
     if node.name in SpecifiedRanges.ranges_looking_up:
         input_list = SpecifiedRanges.ranges_looking_up[node.name]
