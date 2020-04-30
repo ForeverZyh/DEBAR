@@ -15,11 +15,11 @@ open(result_filename, 'w').close()
 
 for model in SpecifiedRanges.models:
     if not unbounded_weight and not unbounded_input:
-        os.system("(time %s ./analysis_main.py /newdisk/Yuhao/dnn_test/%s.pbtxt) >> %s 2>&1" % (interpreter_path, model, result_filename))
+        os.system("(time %s ./analysis_main.py /newdisk/dnn_test/%s.pbtxt) >> %s 2>&1" % (interpreter_path, model, result_filename))
     elif unbounded_weight:
-        os.system("(time %s ./analysis_main.py /newdisk/Yuhao/dnn_test/%s.pbtxt unbounded_weight) >> %s 2>&1" % (interpreter_path, model, result_filename))
+        os.system("(time %s ./analysis_main.py /newdisk/dnn_test/%s.pbtxt unbounded_weight) >> %s 2>&1" % (interpreter_path, model, result_filename))
     elif unbounded_input:
-        os.system("(time %s ./analysis_main.py /newdisk/Yuhao/dnn_test/%s.pbtxt unbounded_input) >> %s 2>&1" % (interpreter_path, model, result_filename))
+        os.system("(time %s ./analysis_main.py /newdisk/dnn_test/%s.pbtxt unbounded_input) >> %s 2>&1" % (interpreter_path, model, result_filename))
         
 lines = open(result_filename).readlines()
 times = []
