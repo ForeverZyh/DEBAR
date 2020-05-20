@@ -1,4 +1,5 @@
-#DEBAR: *DE*tecting Numerical *B*ugs in Neural Network *AR*chitectures
+# DEBAR: *DE*tecting Numerical *B*ugs in Neural Network *AR*chitectures
+
 
 This repository contains the implementation and the evaluation of our upcoming ESEC/FSE 2020 paper:  Detecting Numerical Bugs in Neural Network Architectures.
 
@@ -62,7 +63,7 @@ Please checkout to each tag and the following command is supposed to reproduce t
 python main.py
 ```
 
-##Published Work
+## Published Work
 
 Yuhao Zhang, Luyao Ren, Liqian Chen, Yingfei Xiong, Shing-Chi Cheung, Tao Xie. Detecting Numerical Bugs in Neural Network Architectures.
 
