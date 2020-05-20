@@ -30,7 +30,7 @@ For every architecture in two datasets, we extract the computation graph by usin
 ## Running DEBAR
 
 ```bash
-python analysis_main.py PXTXT_FILE [unbounded_weight/unbounded_input]
+python analysis_main.py PBTXT_FILE [unbounded_weight/unbounded_input]
 ```
 
 The above command shows how to run DEBAR. The first argument to  `analysis_main.py` is the Protocol Buffer file describing the target computation graph. 
