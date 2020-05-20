@@ -1,4 +1,4 @@
-#Dynamic Tool
+# Dynamic Tool
 
 `dynamic_tool` is a dynamic fuzzing tool guided by gradients to detect numerical bugs. The fuzzing tool does not require concrete parameters in the neural networks (trained models). The fuzzing tool can significantly reduce the time and training epoch needed to trigger the numerical bugs by injecting fuzzing process inside neural network training.
 
