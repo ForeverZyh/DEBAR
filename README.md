@@ -27,7 +27,7 @@ The second dataset contains 48 architectures from a large collection of research
 
 For every architecture in two datasets, we extract the computation graph by using a TensorFlow API. Each extracted computation graph is represented by a Protocol Buffer file, which provides the operations (nodes) and the data flow relations (edges).
 
-### Running DEBAR
+## Running DEBAR
 
 ```bash
 python analysis_main.py PXTXT_FILE [unbounded_weight/unbounded_input]
@@ -48,7 +48,7 @@ The specification of ranges of weights/inputs can be given in two ways:
 
 The recommended way of specifying ranges is first trying to input to the console and then manually store the ranges in `./parse/specified_ranges.py` if future reproduction is needed.
 
-### Reproduce Evaluation in our Paper
+## Reproduce Evaluation in our Paper
 
 There are four tags showing the four configurations mentioned in our paper.
 
