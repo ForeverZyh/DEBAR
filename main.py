@@ -5,6 +5,16 @@ import subprocess
 
 from parse.specified_ranges import SpecifiedRanges
 
+path = "/tmp"
+try:
+    assert len(sys.argv) == 2
+    path = sys.argv[1]
+
+except:
+    print(
+        "Please run 'python main.py PATH_TO_DATASETS'.\nAborted...")
+    exit(1)
+
 unbounded_weight = False
 unbounded_input = False
 interpreter_path = sys.executable
@@ -15,12 +25,15 @@ open(result_filename, 'w').close()
 
 for model in SpecifiedRanges.models:
     if not unbounded_weight and not unbounded_input:
-        os.system("(time %s ./analysis_main.py /newdisk/dnn_test/%s.pbtxt) >> %s 2>&1" % (interpreter_path, model, result_filename))
+        os.system(
+            "(time %s ./analysis_main.py %s/%s.pbtxt) >> %s 2>&1" % (interpreter_path, model, path, result_filename))
     elif unbounded_weight:
-        os.system("(time %s ./analysis_main.py /newdisk/dnn_test/%s.pbtxt unbounded_weight) >> %s 2>&1" % (interpreter_path, model, result_filename))
+        os.system("(time %s ./analysis_main.py %s/%s.pbtxt unbounded_weight) >> %s 2>&1" % (
+        interpreter_path, model, path, result_filename))
     elif unbounded_input:
-        os.system("(time %s ./analysis_main.py /newdisk/dnn_test/%s.pbtxt unbounded_input) >> %s 2>&1" % (interpreter_path, model, result_filename))
-        
+        os.system("(time %s ./analysis_main.py %s/%s.pbtxt unbounded_input) >> %s 2>&1" % (
+        interpreter_path, model, path, result_filename))
+
 lines = open(result_filename).readlines()
 times = []
 sats = []
