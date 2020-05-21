@@ -1,5 +1,14 @@
 class SpecifiedRanges:
-    models = ["ssd_mobile_net_v1", 
+    models = ["Github-IPS-1",
+              "Github-IPS-6",
+              "Github-IPS-9",
+              "StackOverflow-IPS-1",
+              "StackOverflow-IPS-2",
+              "StackOverflow-IPS-6",
+              "StackOverflow-IPS-7",
+              "StackOverflow-IPS-14",
+              "TensorFuzz",
+              "ssd_mobile_net_v1", 
               "ssd_inception_v2", 
               "ssd_mobile_net_v2", 
               "faster_rcnn_resnet_50", 
@@ -50,6 +59,24 @@ class SpecifiedRanges:
     
     # a dictionary with key = "filename", and value with another dictionary {"variable_name" -> ranges}
     specified_ranges = {
+        "Github-IPS-1": {"Placeholder_2": [0.5,1], "Placeholder": [-1,1]},
+        # keep prob; mnist image pixel
+        "Github-IPS-6": {"x-input": [-1,1]},
+        # mnist image pixel
+        "Github-IPS-9": {"Placeholder": [-1,1]},
+        # mnist image pixel
+        "StackOverflow-IPS-1": {"Placeholder_2": [0.5,1], "Placeholder": [-1,1]},
+        # keep prob; mnist image pixel
+        "StackOverflow-IPS-2": {"Placeholder_2": [0.5,1], "Placeholder": [-1,1]},
+        # keep prob; mnist image pixel
+        "StackOverflow-IPS-6": {"Placeholder_2": [0.5,1], "Placeholder": [-1,1]},
+        # keep prob; mnist image pixel
+        "StackOverflow-IPS-7": {"Placeholder": [0.5,1]},
+        # mnist image pixel
+        "StackOverflow-IPS-14": {"Placeholder": [0.5,1]},
+        # mnist image pixel
+        "TensorFuzz": {"OneShotIterator": [[-1,1],[0,9]]},
+        # mnist image pixel; labels
         "ssd_mobile_net_v1": {"IteratorV2": [[0,None],[-1,1],[None,None],[1,None],[None,None],[0,299],[0,1],[0,1],[None,None],[False,True],[0,1],[1,100]]},
     # HASH_KEY ; image pixels from [-1, 1]; unknown; real shape of image; unknown; the corner of boxes; one hot values; one hot values; unknown; boolean value; weights; number of boxes
         "ssd_inception_v2": {"IteratorV2": [[0,None],[-1,1],[None,None],[1,None],[None,None],[0,299],[0,1],[0,1],[None,None],[False,True],[0,1],[1,100]]}, 
