@@ -46,7 +46,7 @@ We describe the functionality of each python source file and each folder in the 
   * `Array` is the data structure supporting the tensor partitioning. It mainly contains:
 
     * `index_slices`: a list stores the partitioning positions of each dimension. If the tensor has dimension $d$ then `index_slices` contains $d$ tuples, each of which is the set of partitioning positions. If the $i$-th dimension is partitioned to $[0,p^{(i)}_0), [p^{(i)}_0,p^{(i)}_1), \dots, [p^{(i)}_{m-1},p^{(i)}_m)$, where $p^{(i)}_m$ is equal to the size of $i$-th dimension, then the $i$-th tuple of `index_slices` will be $(p^{(i)}_0,p^{(i)}_2,\ldots,p^{(i)}_m)$.
-      <img src="./imgs/fig0.png" alt="Figure0" style="zoom:35%;" />
+      <img src="./imgs/fig0.png" alt="Figure0" width="400" height="300" />
 
       For example, a two-dimension tensor (matrix) A has the shape $3\times 4$ and it is partitioned into 6 partitions $[0,1)\times [0,2)$,  $[0,1)\times [2,3)$, $[0,1)\times [3,4)$, $[1,3)\times [0,2)$,  $[1,3)\times [2,3)$, $[1,3)\times [3,4)$. Then the `index_slices` will be `[(1, 3), (2, 3, 4)]`.
 
