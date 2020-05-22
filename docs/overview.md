@@ -25,7 +25,7 @@ We describe the functionality of each python source file and each folder in the 
   * Third, it checks whether the range of the input to the unsafe operation intersects with its danger zone.
     * If safe, then the unsafe operation is verified to be safe.
     * Otherwise, go to the next step.
-  * Fourth, if  the range of input to the unsafe operation cannot be proved as safe, we will further split the ranges of some nodes using constant predicates such as 0. If all the splits of any node can prove the range of input to the unsafe operation does not intersect with its danger zone, then the operation is safe. The details and the motivation of predicate splitting can be found at **Algorithm** Section.
+  * Fourth, if  the range of input to the unsafe operation cannot be proved as safe, we will further split the ranges of some nodes using constant predicates such as 0. If all the splits of any node can prove the range of input to the unsafe operation does not intersect with its danger zone, then the operation is safe. The motivation and the details of predicate splitting can be found at **Algorithm** Section.
     * If safe, then the unsafe operation is verified to be safe.
     * Otherwise, DEBAR generates a warning for the unsafe operation.
 
@@ -119,6 +119,38 @@ We describe the functionality of each python source file and each folder in the 
   * `resolve_type(y)` converts `y` from data types in `numpy`  to python primitive data types.
   * `shape_from_proto(shape)` parses the tensor shape from protocol buffer format `shape` into a python list.
 
-## Algorithm
+## Predicate Splitting
 
+The workflow of `analysis_main.py` has been described previously. We further describe the motivation and the details of predicate splitting.
+
+### Motivation
+
+Considering the following expression:
+$$
+y = e^{-relu(x)} + e^{x-relu(x)}
+$$
+
+
+### <img src="./imgs/fig2.png" alt="fig2" width="490" height="300" />
+
+The range of $y$ is $(1,2]$ if the range of $x$ is $[-50,40]$. Using the interval abstraction with affine relation, we are able to calculate the range of $-relu(x)$ is $[-40,0]$ and the range of $x-relu(x)$ is $[-50,0]$. Then the range of $e^{-relu(x)}$ is $[0,1]$ and the range of  $e^{x-relu(x)}$  is $[0,1]$, leading the range of $y$ to be $[0,2]$. 
+
+The range of $y$ is an over-approximation because $e^{-relu(x)}$ is decreasing and $e^{x-relu(x)}$ is increasing. Besides, due to the nonlinearity of the exponential function, affine relation alone cannot eliminate the over-approximation of $y$. However, we can infer that $y$ depends on $x$ nonlinearly. 
+
+When we find out a variable $y$ is depends on another variable $x$  nonlinearly, we apply the **predicate splitting** technique, which further splits the range of $x$ according to some constant predicates like 0, and then merge the ranges of $y$ to get a preciser result. 
+
+In this case, if we split the range of $x$ to $[-50, 0]\cup [0, 40]$. 
+
+*  $x=[-50,0]$:  we are able to calculate the range of $-relu(x)$ is $[0,0]$ and the range of $x-relu(x)$ is $[-50,0]$. Then the range of $e^{-relu(x)}$ is $[1,1]$ and the range of  $e^{x-relu(x)}$  is $[0,1]$, leading the range of $y$ to be $[1,2]$. 
+* $x=[0,40]$:  we are able to calculate the range of $-relu(x)$ is $[-40,0]$ and the range of $x-relu(x)$ is $[0,0]$. Then the range of $e^{-relu(x)}$ is $[0,1]$ and the range of  $e^{x-relu(x)}$  is $[1,1]$, leading the range of $y$ to be $[1,2]$. 
+
+After merge the two ranges of $y$, we get the precise range $[1,2]$.
+
+### Details
+
+For each unsafe operation under verification, `analysis_main.py` first calls `graph.forward_analysis` in `parse_grahp.py` to get the dataflow analysis results of the computation graph. The analysis results are stored in `graph.node_output`, and the return values of `graph.forward_analysis` contain the ranges of node needed to be split `range_to_split`.
+
+Function `is_valid_by_split` checks whether the unsafe operation's input is valid. It first checks whether the input ranges of the unsafe operation is valid without without predicate splitting, if false, it tries to split each node in `range_to_split` and reevaluate the dataflow analysis in an incremental manner by calling `graph.reevaluate`. If the merged result of any split node is valid, then the input ranges of the unsafe operation is proved to be valid.
+
+Theoretically, the more splits we try the preciser results we will get. In the implementation, we only try to split the range into two splits and the constant predicate is always 0.
 

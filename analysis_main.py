@@ -45,20 +45,21 @@ if __name__ == "__main__":
     cnt_unknown = 0
     cnt_unsat = 0
     for suspected_node in suspected_nodes:
-        # graph.draw(graph.backward_slice(suspected_node.name, set()), "real_interested")
+        # calculate the range of input of the unsafe operations
         if suspected_node.op in ["RealDiv", "Floormod"]:
+            # special treatment for div because we only care about the denominator
             ret = graph.forward_analysis(graph.node_by_name[graph.graph_backward[0][suspected_node.name][1]],
                                          suspected_node)
         else:
             ret = graph.forward_analysis(suspected_node)
         if ret is None:
             continue
-        elif ret == "ni":
-            cnt_all += 1
-            print(suspected_node.op, suspected_node.name)
-            print("unknown")
-            cnt_unknown += 1
-            continue
+        # elif ret == "ni":
+        #     cnt_all += 1
+        #     print(suspected_node.op, suspected_node.name)
+        #     print("unknown")
+        #     cnt_unknown += 1
+        #     continue
 
         if suspected_node.op in ["Exp", "Expm1"]:
             suspected_node_input = Range(left=math.log(OVERFLOW_LIMIT), right=None, const_type=0)
@@ -92,6 +93,8 @@ if __name__ == "__main__":
             raise NotImplementedError("No rule for ", suspected_node.op)
 
 
+        # check whether the input_range intersects with its danger zone
+        # return true if dose no intersect; otherwise, return false
         def is_valid(input_range):
             additional_constraint = meet(input_range, suspected_node_input)
             S = z3.Solver()
@@ -101,10 +104,13 @@ if __name__ == "__main__":
             return ans == z3.unsat
 
 
+        # check whether the unsafe operation's input is valid
         def is_valid_by_split():
+            # if it is valid without predicate splitting
             if is_valid(graph.node_output[backward_analysis_const_start].index_of(index).value):
                 return True
             else:
+                # otherwise, try predicate splitting
                 range_to_split, nodes_interested = ret
                 range_to_split = list(range_to_split)
                 for name in range_to_split:
@@ -121,6 +127,8 @@ if __name__ == "__main__":
                         is_span_valid = True
                         for span in spans:
                             override_dict[name] = span
+                            # incrementally rerun the dataflow analysis on changed node set with the node output
+                            # overridden to override_dict
                             node_out = graph.reevaluate(nodes_interested, backward_analysis_const_start, changed,
                                                         override_dict)
                             if not is_valid(node_out.index_of(index).value):
@@ -135,11 +143,10 @@ if __name__ == "__main__":
 
         if not is_valid_by_split():
             print(suspected_node.op, suspected_node.name)
-            print("sat")
+            print("warning")
             cnt_sat += 1
-        #             if cnt_sat == 1: exit(0)
         else:
             cnt_unsat += 1
         cnt_all += 1
-    print("all: ", cnt_all, "sat: ", cnt_sat, "unsat: ", cnt_unsat, "unknown because of API: ", cnt_unknown)
+    print("all: ", cnt_all, "warnings: ", cnt_sat, "safe: ", cnt_unsat, "unknown because of API: ", cnt_unknown)
     print(graph.get_info())
