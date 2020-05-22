@@ -8,9 +8,9 @@ import copy
 import bisect
 
 magic = "$relu"
-magic1 = "$max"
 
 
+# legacy class of z3-solver
 class Solver:
     solver = z3.Solver()
     index = {}
@@ -34,29 +34,6 @@ class Solver:
         else:
             raise NotImplementedError("Cannot Recognize: ", dtype)
         return Solver.variable_by_name[real_name]
-
-    # @staticmethod
-    # def new_variable(real_name, dtype):
-    #     if dtype in [3]:
-    #         Solver.variable_by_name[real_name] = z3.Int(real_name)
-    #     elif dtype in [1]:
-    #         Solver.variable_by_name[real_name] = z3.Real(real_name)
-    #     elif dtype in [10]:
-    #         Solver.variable_by_name[real_name] = z3.Bool(real_name)
-    #     else:
-    #         Solver.variable_by_name[real_name] = z3.Real(real_name)
-    #         warnings.warn("Cannot Recognize: " + str(dtype), RuntimeWarning)
-    #     return Solver.variable_by_name[real_name]
-    #
-    # @staticmethod
-    # def add_variable_list(variables: list):
-    #     for (x, y) in variables:
-    #         name = x + " " + str(y)
-    #         Solver.new_variable(name, Array.name_to_dtype[x])
-    #
-    # @staticmethod
-    # def to_variable(x: tuple):
-    #     return Solver.variable_by_name[x[0] + " " + str(x[1])]
 
     @staticmethod
     def max(x, ys_):
@@ -111,6 +88,7 @@ class Solver:
             return x == interval
 
 
+# data structure for interval abstraction
 class Range:
     def __init__(self, *args, **kwargs):
         """Two ways of construction:
@@ -153,17 +131,21 @@ class Range:
         return Range(left=None if self.left is None else self.left + other,
                      right=None if self.right is None else self.right + other,
                      const_type=self.const_type)
-    
+
     def single(self):
         return self.left == self.right
 
 
 class Linear:
     def __init__(self, e):
+        # a map maps from variables to the their factors
         self.value = {e: 1}
         self.map_to_index = {e: list(range(len(e[1])))}
-        # map_to_index is the mapping from e = (name, position) to the index of outer index_slice
-        # if position = (l_0,r_0) ... (l_n,r_n) then name[l_0:r_0,:,...,:] is mapped to outer[..., map_to_index[0]-th , ...]
+        # map_to_index is the mapping from e = (name, position) to the Array's partition
+        # i-th index of Array's partition is mapped to map_to_index[i]-th index of name's position.
+        # The purpose of maintaining this index mapping is that after operations like unpack, additional dimensions may
+        # be added, after operation like pack, the dimensions may be deleted (these dimensions are all equal to 1 and do
+        # not change the size of the partition), after operation like transpose, the dimensions may be permuted.
 
     def __str__(self):
         return "\t\tvalue: %s\n\t\tmap_to_index: %s" % (str(self.value), str(self.map_to_index))
@@ -172,6 +154,7 @@ class Linear:
         return "\t\tvalue: %s\n\t\tmap_to_index: %s" % (str(self.value), str(self.map_to_index))
 
     def __add__(self, other):
+        # adds between two affine expressions and returns a new Linear object.
         ret = copy.deepcopy(self)
         for x in other.value:
             if x in ret.value:
@@ -182,6 +165,7 @@ class Linear:
         return ret
 
     def __sub__(self, other):
+        # subs between two affine expressions and returns a new Linear object.
         ret = copy.deepcopy(self)
         for x in other.value:
             if x in ret.value:
@@ -192,6 +176,7 @@ class Linear:
         return ret
 
     def choose(self, start_ind):
+        # futher partitions the variables inside the Linear object and returns a new partitioned Linear object.
         # len(start_ind) = len(x[1]) = len(map)
         ret = copy.deepcopy(self)
         ret.value = {}
@@ -212,6 +197,7 @@ class Linear:
         return ret
 
     def transpose(self, perm):
+        # transposes the map_to_index according to the permutation perm and returns a new transposed Linear object.
         # len(perm) = len(x[1]) = len(map)
         ret = copy.deepcopy(self)
         for x in self.value:
@@ -224,6 +210,7 @@ class Linear:
         return ret
 
     def add_pack_ind(self, pack_ind):
+        # adds an axis at the pack_ind-th dimension and returns a new packed Linear object.
         ret = copy.deepcopy(self)
         for x in self.value:
             map = self.map_to_index[x]
@@ -233,6 +220,7 @@ class Linear:
         return ret
 
     def remove_unpack_axis(self, axis):
+        # removes an axis at the axis-th dimension and returns a new unpacked Linear object.
         ret = copy.deepcopy(self)
         for x in self.value:
             map = self.map_to_index[x]
@@ -242,25 +230,27 @@ class Linear:
         return ret
 
     def neg(self):
+        # calculates the negation of the affine expression.
         for x in self.value:
             self.value[x] *= -1
 
     def relu(self):
+        # calculates the relu of the affine expression and returns a new Linear object.
+        # only supports calculating the relu of a singleton affine expression that only contains one variable or one
+        # constant value.
+        # The following axioms are used to calculate relu:
+        # relu(x)=relu(x)
+        # relu(-x)=-x+relu(x)
+        # relu(relu(x))=relu(x)
+        # relu(-relu(x))=0
+
         assert len(self.value) <= 1
         ret = Linear(("dumy", (0, 1)))
         ret.value = {}
         ret.map_to_index = {}
         for x in self.value:
             name, position = x
-            # relu(name)  if value[x] >= 0
-            #     then magic + name, value[x]
-            #     else magic + $ + name, abs(value[x])
-            #
-            # relu(magic + name) if value[x] >= 0
-            #     then magic + name, value[x]
-            #     else 0
-            assert name[:len(magic1)] != magic1 # we don't consider two magic tag situation 
-            if name[:len(magic)] != magic: # relu(name)
+            if name[:len(magic)] != magic:  # relu(name)
                 if self.value[x] >= 0:
                     ret.value[(magic + name, position)] = self.value[x]
                     ret.map_to_index[(magic + name, position)] = self.map_to_index[x]
@@ -276,31 +266,17 @@ class Linear:
                 else:
                     ret.value[(name, position)] = 0
                     ret.map_to_index[(name, position)] = self.map_to_index[x]
-                
+
         return ret
-    
-#     def Max(self):
-#         assert len(self.value) <= 1
-#         ret = Linear(("dumy", (0, 1)))
-#         ret.value = {}
-#         ret.map_to_index = {}
-#         for x in self.value:
-#             name, position = x
-#             assert name[:len(magic)] != magic # we don't consider two magic tag situation 
-#             if name[:len(magic1)] != magic1:
-#                 ret.value[(magic1 + name, position)] = self.value[x]
-#                 ret.map_to_index[(magic1 + name, position)] = self.map_to_index[x]
-#             else:
-#                 ret.value[(name, position)] = self.value[x]
-#                 ret.map_to_index[(name, position)] = self.map_to_index[x]
-                
-#         return ret
 
 
 class Array:
 
     def __init__(self, name, size):
+        # a list stores the partitioning positions of each dimension
         self.index_slices = []
+        # a map maps from each partition to a Linear object, which maintains the linear affine relation.
+        # Each partition is defined by the Cartesian product of d tuples in  index_slices .
         self.block_to_symbol = {}
         try:
             len(size)
@@ -308,18 +284,6 @@ class Array:
             self.index_slices = None
             return
 
-        # try:
-        #     if len(size) == 1:
-        #         int(size[0])
-        # except:
-        #     self.index_slices = [None]
-        #     self.block_to_symbol = {(None,): symbol}
-        #     return
-        #
-        # if len(size) == 0 or (len(size) == 1 and int(size[0]) == 0):
-        #     self.index_slices = [[1]]
-        #     self.block_to_symbol = {(1,): symbol}
-        # else:
         for i in range(len(size)):
             try:
                 self.index_slices.append([int(size[i])])
@@ -330,27 +294,32 @@ class Array:
 
     @staticmethod
     def join_index_slices(a, b):
+        # aligns two sets of partitioning positions a and b.
         ret = []
         for i in range(len(a)):
-            if a[i][0] is None and b[i][0] is None:
+            if a[i][0] is None and b[i][0] is None:  # if one of the dimension is unknown
                 ret.append([None])
             else:
                 assert a[i][0] is not None and b[i][0] is not None
-                c = np.unique(a[i] + b[i])
+                c = np.unique(a[i] + b[i])  # join the current dimension of a and b
                 ret.append(list(c))
 
         return ret
 
     def get_corresponding_keys(self, index_slices):
+        # gets the corresponding Linear objects according to index_slices.
+        # Notice that index_slices may have a finer granularity than self.index_slices, so the Linear object may need
+        # to be further partitioned.
         ret = []
-        for indexes in product(*index_slices):
+        for indexes in product(*index_slices):  # enumerate the Cartesian product of index_slices
             key = ()
             start_ind = []
             for i in range(len(indexes)):
-                if indexes[i] is not None:
+                if indexes[i] is not None:  # if the dimension is not unknown
                     t = bisect.bisect_left(index_slices[i], indexes[i])
                     start_ind.append([0 if t == 0 else index_slices[i][t - 1], indexes[i]])
                     iargs = bisect.bisect_left(self.index_slices[i], indexes[i])
+                    # calculate the partitioning positions inside Linear object
                     if iargs > 0:
                         start_ind[-1][0] -= self.index_slices[i][iargs - 1]
                         start_ind[-1][1] -= self.index_slices[i][iargs - 1]
@@ -360,24 +329,10 @@ class Array:
                     key += (None,)
                     start_ind.append(None)
 
+            # further partition the Linear object
             ret.append(self.block_to_symbol[key].choose(start_ind))
 
         return ret
-
-    # def get_possible_values(self):
-    #     ret = []
-    #     for ix in self.block_to_symbol:
-    #         flag = True
-    #         x = self.block_to_symbol[ix]
-    #         for y in ret:
-    #             if y.equals(x):
-    #                 flag = False
-    #                 break
-    #
-    #         if flag:
-    #             ret.append(x)
-    #
-    #     return [str_2_linear_expression(str(x)) for x in ret]
 
     def __str__(self):
         ret_str = ""
@@ -394,12 +349,14 @@ class Array:
         return ret_str
 
 
+# checks whether a Range object has a const lower and upper bound
 def check_range_const(range_const: Range):
     if z3.is_arith(range_const.left) or z3.is_arith(range_const.right):
         return True
     return not (range_const.left is not None and range_const.right is not None and range_const.left > range_const.right)
 
 
+# checks whether the interval of `range` intersects with the interval of `range_const`
 def meet(range, range_const: Range):
     if not check_range_const(range_const):
         return False
@@ -426,13 +383,6 @@ def meet(range, range_const: Range):
                 return True
     else:
         raise NotImplementedError
-        # if isinstance(range, Range):
-        #     if range_const.left is not None and range_const.right is not None:
-        #         return z3.And(range_const.left >= range.left, range.right >= range_const.right)
-        #     else:
-        #         return False
-        # else:
-        #     return z3.And(range_const.left == range, range == range_const.right)
 
 
 def meet_relation_variable(rv, range_const: Range):
@@ -451,45 +401,3 @@ def meet_relation_variable(rv, range_const: Range):
             return True
     else:
         raise NotImplementedError
-
-# def str_2_linear_expression(x: str):
-#     ret = []
-#     x += " "
-#     if x[0] != '-' and x[0] != '+':
-#         x = "+" + x
-#     sign = 1
-#     factor = 0
-#     symbol = ""
-#     has_sign = False
-#     has_factor = False
-#     i = 0
-#     while i < len(x):
-#         if x[i] in ['-', '+']:
-#             if x[i] == '-':
-#                 sign = -1
-#             else:
-#                 sign = 1
-#             has_sign = True
-#         elif has_factor:
-#             if x[i] == ' ':
-#                 ret.append((sign * factor, symbol))
-#                 sign = 1
-#                 factor = 0
-#                 symbol = ""
-#                 has_sign = False
-#                 has_factor = False
-#             else:
-#                 symbol += x[i]
-#         elif has_sign:
-#             if '0' <= x[i] <= '9':
-#                 factor = factor * 10 + ord(x[i]) - 48
-#             elif x[i] == '*':
-#                 has_factor = True
-#             elif x[i] != ' ':
-#                 factor = 1
-#                 has_factor = True
-#                 symbol += x[i]
-#
-#         i += 1
-#
-#     return ret

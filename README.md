@@ -7,6 +7,8 @@ DEBAR can detect numerical bugs in neural networks at the architecture level (wi
 
 ## Environment 
 
+DEBAR runs on python3 (>=3.5).
+
 We encourage users to use virtual environments such as virtualenv or conda.
 
 ```bash
@@ -21,7 +23,7 @@ DEBAR has a dependency on TensorFlow v1 but is not compatible with TensorFlow v2
 
 We share our two collected datasets and evaluation results [online](https://drive.google.com/file/d/146UDCTFbjO3Wz_BcCVnRkyCo529dxmFk/view?usp=sharing). 
 
-The first dataset is a set of 9 buggy architectures collected by existing studies. The buggy architectures come from two studies: eight architectures were collected by a previous [empirical study on TensorFlow bugs](https://github.com/ForeverZyh/TensorFlow-Program-Bugs) (Github/Stackoverflow-IPS-id.pbtxt) and one architecture was obtained from the study that proposes and evaluates [TensorFuzz](https://github.com/brain-research/tensorfuzz/blob/master/bugs/collection_bug.py) (TensorFuzz.pbtxt). 
+The first dataset is a set of 9 buggy architectures collected by existing studies. The buggy architectures come from two studies: eight architectures were collected by a previous [empirical study on TensorFlow bugs](https://github.com/ForeverZyh/TensorFlow-Program-Bugs) (Github/StackOverflow-IPS-id.pbtxt) and one architecture was obtained from the study that proposes and evaluates [TensorFuzz](https://github.com/brain-research/tensorfuzz/blob/master/bugs/collection_bug.py) (TensorFuzz.pbtxt). 
 
 The second dataset contains 48 architectures from a large collection of research projects in TensorFlow Models repository. Overall, our second dataset contains a great diversity of neural architectures like CNN, RNN, GAN, HMM, and so on. Please note that we have no knowledge about whether the architectures in this dataset contain numerical bugs when collecting the dataset.
 
@@ -57,10 +59,10 @@ There are four tags showing the four configurations mentioned in our paper.
 * `expansion-affine`: We use the **tensor expansion** as the abstraction for tensors and interval abstraction **with affine relations**.
 * `partition-wo-affine`: We use the **tensor smashing** as the abstraction for tensors and interval abstraction **without affine relations**.
 
-Please checkout to each tag and the following command is supposed to reproduce the results in our paper.
+Please checkout to each tag and the following command, where `PATH_TO_DATASETS` is the path of the downloaded datasets, is supposed to reproduce the evaluation results in our paper.
 
 ```bash
-python main.py
+python main.py PATH_TO_DATASETS
 ```
 
 ## Published Work
