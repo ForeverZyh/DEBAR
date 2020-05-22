@@ -1,7 +1,6 @@
 # call the analysis_main.py
 import sys
 import os
-import subprocess
 
 from parse.specified_ranges import SpecifiedRanges
 
@@ -29,10 +28,10 @@ for model in SpecifiedRanges.models:
             "(time %s ./analysis_main.py %s/%s.pbtxt) >> %s 2>&1" % (interpreter_path, model, path, result_filename))
     elif unbounded_weight:
         os.system("(time %s ./analysis_main.py %s/%s.pbtxt unbounded_weight) >> %s 2>&1" % (
-        interpreter_path, model, path, result_filename))
+            interpreter_path, model, path, result_filename))
     elif unbounded_input:
         os.system("(time %s ./analysis_main.py %s/%s.pbtxt unbounded_input) >> %s 2>&1" % (
-        interpreter_path, model, path, result_filename))
+            interpreter_path, model, path, result_filename))
 
 lines = open(result_filename).readlines()
 times = []

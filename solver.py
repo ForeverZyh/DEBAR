@@ -1,11 +1,11 @@
 import z3
-from utils import resolve_type
 import math
 import numpy as np
 from itertools import product
-import warnings
 import copy
 import bisect
+
+from utils import resolve_type
 
 magic = "$relu"
 

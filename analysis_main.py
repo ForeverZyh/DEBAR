@@ -1,13 +1,13 @@
-from parse.parse_graph import Graph
-import parse.parse_format_text
-from parse.specified_ranges import SpecifiedRanges
-
 import z3
-from solver import Range, meet
-from utils import OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 import math
 import sys
 import os
+
+from parse.parse_graph import Graph
+import parse.parse_format_text
+from parse.specified_ranges import SpecifiedRanges
+from solver import Range, meet
+from utils import OVERFLOW_LIMIT, UNDERFLOW_LIMIT
 
 if __name__ == "__main__":
     sys.setrecursionlimit(100000)
