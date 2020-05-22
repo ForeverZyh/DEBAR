@@ -25,7 +25,7 @@ We describe the functionality of each python source file and each folder in the 
   * Third, it checks whether the range of the input to the unsafe operation intersects with its danger zone.
     * If safe, then the unsafe operation is verified to be safe.
     * Otherwise, go to the next step.
-  * Fourth, if  the range of input to the unsafe operation cannot be proved as safe, we will further split the ranges of some nodes using constant predicates such as 0. If all the splits of any node can prove the range of input to the unsafe operation does not intersect with its danger zone, then the operation is safe. The motivation and the details of predicate splitting can be found at **Algorithm** Section.
+  * Fourth, if  the range of input to the unsafe operation cannot be proved as safe, we will further split the ranges of some nodes using constant predicates such as 0. If all the splits of any node can prove the range of input to the unsafe operation does not intersect with its danger zone, then the operation is safe. The motivation and the details of predicate splitting can be found at **Predicate Splitting** Section.
     * If safe, then the unsafe operation is verified to be safe.
     * Otherwise, DEBAR generates a warning for the unsafe operation.
 
