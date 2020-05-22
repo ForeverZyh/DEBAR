@@ -37,7 +37,7 @@
 
 We encourage the developers to contributes to DEBAR by implementing abstract interpretations of other TensorFlow APIs that are not handled by DEBAR. This Section is a guideline for implementing the abstract interpretations.
 
-1. Please read the description of `InferValue` and `InferArray` in the previous Section. If you want to contribute to `InferValue`, please also read the `Range` class in [Overview](./Overview.md). If you want to contribute to `InferArray`, please also read the `Array` and `Linear` class in  [Overview](./Overview.md).
+1. Please read the description of `InferValue` and `InferArray` in the previous Section. If you want to contribute to `InferValue`, please also read the `Range` class in [Overview](./overview.md). If you want to contribute to `InferArray`, please also read the `Array` and `Linear` class in  [Overview](./overview.md).
 2. Contribute to `InferValue`: `InferValue` contains the abstract interpretations of TensorFlow APIs used in interval abstraction. Please make sure you add a method that:
    1. The method is static.
    2. The method name is the same as the lowercase operation name of the TensorFlow API in the protocol buffer file.
