@@ -277,6 +277,7 @@ class Graph:
                     range_args = [identity([self.node_output[args[i]].index_of(self.edge_index[compare_node_name][i])])
                                   for i in range(2)]
 
+                    # check whether the cond tensor can be determined to be all true or all false
                     def can_determine():
                         if compare_node.op == "GreaterEqual":
                             if range_args[0].left >= range_args[1].right:
@@ -317,9 +318,14 @@ class Graph:
                     temp_ret = can_determine()
                     if temp_ret is not None:
                         temp = temp_ret
-                    else:  # cannot determine, we require one to be single_value_arrays. If two, we choose the first one
+                    else:  # cannot determine the cond tensor
                         single_value_array_id = None
                         array = None
+                        # the cond has the form of: arg0 cmp arg1
+                        # we require one of two args to be single_value_array. If both are single_value_arrays, we
+                        # will choose the first one
+                        # single_value_array: partitions depend on only one variable in linear affine relation without
+                        # relu.
                         for i in range(2):
                             array = self.node_output[args[i]].index_of(self.edge_index[compare_node_name][i]).array
                             single_value_array = True
@@ -337,9 +343,11 @@ class Graph:
                                 break
 
                         if single_value_array_id is not None:
+                            # compute the abstracted output of "GreaterEqual", "Greater", "LessEqual", "Less" operations
                             def compute(op, c):
                                 values = []
-                                for arg_id_select in range(2):
+                                # enumerate the branch id
+                                for branch_id_select in range(2):
                                     override_dict = {}
                                     for key in array.block_to_symbol:
                                         group = array.block_to_symbol[key]
@@ -353,7 +361,7 @@ class Graph:
                                                 if factor < 0:
                                                     rhs = Range(left=rhs.right, right=rhs.left)
                                                 if (factor > 0) ^ (op in ["GreaterEqual", "Greater"]) ^ (
-                                                        arg_id_select == 0):
+                                                        branch_id_select == 0):
                                                     # value >= rhs
                                                     override_dict[(name, position)] = Range(
                                                         left=max(value.left, rhs.left),
@@ -364,16 +372,18 @@ class Graph:
                                                         left=min(value.left, rhs.right),
                                                         right=min(value.right, rhs.right))
 
-                                    values.append(self.get_left_right(branch_array[arg_id_select].block_to_symbol,
-                                                                      branch_node_name[arg_id_select], override_dict))
+                                    values.append(self.get_left_right(branch_array[branch_id_select].block_to_symbol,
+                                                                      branch_node_name[branch_id_select], override_dict))
                                     if values[-1] is None:
                                         return None
                                 return Range(left=min(values[0].left, values[1].left),
                                              right=max(values[0].right, values[1].right))
 
+                            # compute the abstracted output of "Equal", "NotEqual"
                             def compute_equal(op, c):
                                 values = []
-                                for arg_id_select in range(2):
+                                # enumerate the branch id
+                                for branch_id_select in range(2):
                                     override_dict = {}
                                     for key in array.block_to_symbol:
                                         group = array.block_to_symbol[key]
@@ -386,7 +396,7 @@ class Graph:
                                                 rhs = c * (1 / factor)
                                                 if factor < 0:
                                                     rhs = Range(left=rhs.right, right=rhs.left)
-                                                if (op == "NotEqual") ^ (arg_id_select == 0):
+                                                if (op == "NotEqual") ^ (branch_id_select == 0):
                                                     # value == rhs
                                                     override_dict[(name, position)] = Range(
                                                         left=max(value.left, rhs.left),
@@ -395,8 +405,8 @@ class Graph:
                                                     # value != rhs
                                                     pass
 
-                                    values.append(self.get_left_right(branch_array[arg_id_select].block_to_symbol,
-                                                                      branch_node_name[arg_id_select], override_dict))
+                                    values.append(self.get_left_right(branch_array[branch_id_select].block_to_symbol,
+                                                                      branch_node_name[branch_id_select], override_dict))
                                     if values[-1] is None:
                                         return None
                                 return Range(left=min(values[0].left, values[1].left),
@@ -468,6 +478,7 @@ class Graph:
     # for predicate splitting. appended is the node of the unsafe operation.
     def forward_analysis(self, node_interested, appended=None):
         nodes_interested = self.backward_slice(node_interested.name, set(), True)  # only care about non_control edges
+        # we do not consider operations related to gradient descent.
         for node in nodes_interested:
             if "gradient" in node.lower() and "stopgradient" not in node.lower():
                 self.write("----------Gradients are not interested----------")
@@ -604,7 +615,7 @@ class Graph:
 
                 value = get_value(name, position)
 
-                if value is None:  ## only happens when self.node_output[name].index_of(index) is a zero-size array.
+                if value is None:  # only happens when self.node_output[name].index_of(index) is a zero-size array.
                     continue
 
                 value = Range(left=value.left, right=value.right)
@@ -617,7 +628,8 @@ class Graph:
                 else:
                     relu_factor = 0
 
-                # this will be encountered second
+                # this will be encountered secondly
+                # axiom: x - relu(x) = -relu(-x).
                 if relu_factor < 0 and non_relu_factor > 0:
                     t = min(-relu_factor, non_relu_factor)
                     non_relu_factor -= t  # sub back the non_relu_factor

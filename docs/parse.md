@@ -33,7 +33,7 @@
       This method mainly contains two parts:
 
       1. The logic of computing `value` and `array` of `AbstractInterpretation` in `node_output`. It first computes `value` and `array` using the abstract interpretations in `analysis/inference.py`. Then it further improves the precision of `value` (interval abstraction + tensor smashing) by the information in `array` computed by the tensor partition and the linear affine relation. Notice that the results of the tensor partition and the linear affine relation will be provably more precise than or equal to the results of interval abstraction + tensor smashing. Thus, as long as the result of `array` is available, we will use the results of the tensor partition and the linear affine relation as `value`. `get_left_right` method computes the results of the tensor partition and the linear affine relation. 
-      2. The logic of handling element-wise `Select` operation. Ideally, this part should be located in `analysis/`. However, the coupling between `Select` operation and dataflow analysis is so strong that we decide to leave it in `parse_graph.py`. Considering to refactor it into `analysis/`. The detail of this part can be found in the next section.
+      2. Abstract interpretation of the element-wise `Select` operation. Ideally, this part should be located in `analysis/`. However, the coupling between `Select` operation and dataflow analysis is so strong that we decide to leave it in `parse_graph.py`. Considering to refactor it into `analysis/`. The detail of this part can be found in the next section.
 
     * `forward_analysis(self, node_interested, appended)` is the body of dataflow analysis. It computes the abstracted output of `node_interested`, and returns the ranges for **predicate splitting** (see [Overview](./overview.md)). `appended` is the node of the unsafe operation. `node_interested` is one input of  `appended`. In most of the cases, `node_interested` is the only input of `appended`. For operations like `RealDiv`, we only care about the denominator so `node_interested` will be the second input of `appended` (denoting the denominator). 
 
@@ -77,9 +77,38 @@
   * `models` is a list containing all the architecture names collected in our datasets. Notice that we shortened some of the architecture names to fit into the table in our paper.
   * `specified_ranges` is a map storing the reusable weights/inputs ranges specified by users. The map  has keys denoting architecture names and values containing another map mapping from variable names to their ranges. A range is a 2-elements list denoting the lower bound and the upper bound. If the lower bound is `None`, it means `-inf` and if the upper bound is `None`, it means `+inf`. We show how we infer these specified ranges for all architectures in the comments. 
 
-## Handle Element-wise `Select` Operation
+## Abstract Interpretation of the Element-wise `Select` Operation
 
+We implement the abstract interpretation of the element-wise `select` operation in `summary_node`. The element-wise `select` operation takes three inputs `cond`, `b1`, `b2`, and the return value `ret = select(cond, b1, b2)`, where `cond` is a bool tensor, `b1` , `b2`, and `ret` are two tensors with the same type.  Moreover, `cond`, `b1`, `b2`, and `ret` have the same shape. The semantics of element-wise `select` operation over 1-dimension tensors (vectors) is defined as follow:
+$$
+ret[i] = b1[i] \text{ if } cond[i] \text{ else } b2[i].
+$$
+The `ret[i]` is equal to `b1[i]` if `cond[i]` evaluates to true, otherwise,  `ret[i]` is equal to `b2[i]`.
 
+### Motivation
+
+We get the abstracted values of `cond`, `b1`, and `b2` before analyzing the abstracted value of `ret`. Considering the results obtained by the tensor smashing with the interval abstraction, the abstracted value `cond` vector can be in the following three cases:
+
+1. *All true*, then the abstracted value of `ret` is equal to `b1`
+2. *All false*, then the abstracted value of `ret` is equal to `b2`
+3. *Otherwise*, then the abstracted value of `ret` is equal to the joining ($\sqcup$) of `b1` and `b2`.
+
+Consider the following concrete example: `cond = x > 0`, `b1 = x`, and  `b2 = -x`, where `x` is a numerical vector with interval abstraction $\alpha(b1)=\alpha(x)=[-1,2]$ and $\alpha(b2)=\alpha(-x)=[-2,1]$. Thus, the abstraction of `cond` is the case *otherwise*, leading to $\alpha(ret) = [-1,2] \sqcup [-2,1]=  [-2,2]$.
+
+However, this abstraction of `ret` is an over-approximation. We can get a more precise result by considering the range of the numerical vector in `cond`. If a value in `b1` is chosen, it implies that the corresponding element in `x` is greater than $0$. For the same reason, if a value in `b2` is chosen, it implies that the corresponding value in `x` is less than or equal to $0$. Thus, the interval abstraction $\alpha(b1)$ and $\alpha(b2)$ can be improved to $[0,2]$ and $[0,1]$ respectively, leading to $\alpha(ret) = [0,2] \sqcup [0,1]=  [0,2]$.
+
+### Details
+
+Like **predicate splitting**, the abstract interpretation of element-wise `select` operation needs to "split" the numerical tensors used in `cond`, reevaluate the abstracted outputs of two branches, and finally compute the abstracted output of `select` operation by joining ($\sqcup$) abstracted outputs of two branches.
+
+`cond` has the form of `arg0 cmp arg1`, where `arg0` and `arg1` are numerical tensors, and `cmp` is the compare operation. We require that one of (or both of) `arg0` and `arg1` depends on only one variable in the linear affine relation without $relu$. The one satisfies the above requirement, say node `x`,  will be split according to the comparison operation `cmp`. (If both of them satisfy the above requirement, we will choose the first one.) Without losing the generalizability, the `cond` can be written as `x cmp y`, where $\alpha(x)=[l_x,u_x]$ and $\alpha(y)=[l_y,u_y]$. We summarize the splits of `x` for different comparison operations `cmp`:
+
+| `cmp`                     | $\alpha(x)$ for `b1`             | $\alpha(x)$ for `b2`             |
+| ------------------------- | -------------------------------- | -------------------------------- |
+| `GreaterEqual`, `Greater` | $[\max(l_x,l_y), \max(u_x,l_y)]$ | $[\min(l_x,u_y), \min(u_x,u_y)]$ |
+| `LessEqual`, `Less`       | $[\min(l_x,u_y), \min(u_x,u_y)]$ | $[\max(l_x,l_y), \max(u_x,l_y)]$ |
+| `NotEqual`                | $[l_x,u_x]$                      | $[\max(l_x,l_y), \min(u_x,u_y)]$ |
+| `Equal`                   | $[\max(l_x,l_y), \min(u_x,u_y)]$ | $[l_x,u_x]$                      |
 
 ## Specify Ranges of Weights and Inputs
 
