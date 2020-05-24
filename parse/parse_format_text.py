@@ -1,17 +1,20 @@
 '''https://github.com/tensorflow/tensorflow/blob/master/tensorflow/core/framework/tensor.proto'''
 
 from tensorflow.python.framework import tensor_util
-from solver import Range
-from parse.specified_ranges import SpecifiedRanges
 import ast
 import numpy as np
 import z3
+
+from solver import Range
+from parse.specified_ranges import SpecifiedRanges
 from utils import *
 
 placeholder_map = {}
 unbounded_weight = False
 unbounded_input = False
 
+
+# parses the constant values from the node attribute
 def const(node):
     attrs = node.attr
     tensor = attrs["value"].tensor
@@ -19,11 +22,13 @@ def const(node):
     return value
 
 
+# parses the inputs obtained by the iteratorv2 operation, and returns a list of Range objects
 def iteratorv2(node):
     attrs = node.attr
     return oneshotiterator(node)
 
 
+# parses the weights obtained by the variablev2 operation, and returns a Range object
 def variablev2(node):
     if unbounded_weight:
         return Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT)
@@ -35,13 +40,14 @@ def variablev2(node):
     elif node.name.find("/step") != -1:
         return Range(left=1, right=OVERFLOW_LIMIT)
     if node.name in SpecifiedRanges.ranges_looking_up:
-        return placeholder(node, True) # if the weight=True, it will not return dumy() even if unbounded_input = True
+        return placeholder(node, True)  # if the weight=True, it will not return dumy() even if unbounded_input = True
     elif dtype in [1, 2, 19] and len(shape_from_proto(shape)) > 0:
         return Range(left=-1, right=1)
     else:
-        return placeholder(node, True) # if the weight=True, it will not return dumy() even if unbounded_input = True
+        return placeholder(node, True)  # if the weight=True, it will not return dumy() even if unbounded_input = True
 
 
+# parses the inputs obtained by the oneshotiterator operation, and returns a list of Range objects
 def oneshotiterator(node):
     if node.name in placeholder_map:
         return placeholder_map[node.name]
@@ -86,6 +92,7 @@ def oneshotiterator(node):
     return placeholder_map[node.name]
 
 
+# parses the inputs obtained by the placeholder operation, and returns a Range object
 def placeholder(node, weight=False):
     if unbounded_input and not weight:
         return Range(left=-OVERFLOW_LIMIT, right=OVERFLOW_LIMIT)
@@ -93,10 +100,10 @@ def placeholder(node, weight=False):
         return placeholder_map[node.name]
     attrs = node.attr
     dtype = attrs["dtype"].type
-    
+
     if node.name in SpecifiedRanges.ranges_looking_up:
         rng = SpecifiedRanges.ranges_looking_up[node.name]
-    else:       
+    else:
         print(node)
         while True:
             x = input("Please specify the range of the placeholder \n"

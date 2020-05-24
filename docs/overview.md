@@ -9,9 +9,9 @@ We describe the functionality of each python source file and each folder in the 
 
   For more information please see [Analysis](./analysis.md).
 
-* `parse` folder contains the parsing process of the Protocol Buffer file to the computation graph, the process of static dataflow analysis, the parsing process of values, and the user-specified weights/inputs ranges.
+* `parse` folder contains the parsing process of the Protocol Buffer format to the computation graph, the process of static dataflow analysis, the parsing process of values, and the user-specified weights/inputs ranges.
 
-  * `parse_graph.py` contains the parsing process of the Protocol Buffer file to the computation graph and the process of static dataflow analysis.
+  * `parse_graph.py` contains the parsing process of the Protocol Buffer format to the computation graph and the process of static dataflow analysis.
   * `parse_format_text.py` contains the parsing process of constant values, variables, and placeholders.
   * `specified_ranges.py` contains the reusable weights/inputs ranges specified by users.
 
@@ -108,7 +108,7 @@ We describe the functionality of each python source file and each folder in the 
       relu(-x)=-x+relu(x)\\
       relu(relu(x))=relu(x)\\
       relu(-relu(x))=0\\
-      relu(c)=max(c,0)
+      relu(c)=max(c,0).
       $$
 
   * `meet_relation_variable(rv, range_const)` is never used, also considering removing it.

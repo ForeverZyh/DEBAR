@@ -131,6 +131,7 @@ def safesoftplus(X):
             return np.log1p(np.exp(X))
 
 
+# contains the abstract interpretations of TensorFlow APIs used in interval abstraction + tensor smashing.
 class InferValue:
     @staticmethod
     def abs(args: list, node):
@@ -1313,6 +1314,7 @@ class InferValue:
             return np.tanh(args[0].value)
 
 
+# contains the abstract interpretations of TensorFlow APIs used in the tensor partition and the linear affine relation.
 class InferArray:
     @staticmethod
     def add(args: list, node):
