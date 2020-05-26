@@ -25,27 +25,32 @@ open(result_filename, 'w').close()
 for model in SpecifiedRanges.models:
     if not unbounded_weight and not unbounded_input:
         os.system(
-            "(time %s ./analysis_main.py %s/%s.pbtxt) >> %s 2>&1" % (interpreter_path, model, path, result_filename))
+            "(%s ./analysis_main.py %s/%s.pbtxt) >> %s 2>&1" % (interpreter_path, path, model, result_filename))
     elif unbounded_weight:
-        os.system("(time %s ./analysis_main.py %s/%s.pbtxt unbounded_weight) >> %s 2>&1" % (
-            interpreter_path, model, path, result_filename))
+        os.system("(%s ./analysis_main.py %s/%s.pbtxt unbounded_weight) >> %s 2>&1" % (
+            interpreter_path, path, model, result_filename))
     elif unbounded_input:
-        os.system("(time %s ./analysis_main.py %s/%s.pbtxt unbounded_input) >> %s 2>&1" % (
-            interpreter_path, model, path, result_filename))
+        os.system("(%s ./analysis_main.py %s/%s.pbtxt unbounded_input) >> %s 2>&1" % (
+            interpreter_path, path, model, result_filename))
 
 lines = open(result_filename).readlines()
-times = []
-sats = []
-unsats = []
+# times = []
+info = {}
 for line in lines:
-    if line.find("user") != -1:
-        user_time = float(line[:line.find("user")])
-        line = line[line.find("user") + 5:]
-        sys_time = float(line[:line.find("system")])
-        times.append(user_time + sys_time)
-    if line.find("sat") != -1 and len(line) > 10:
+    # if line.find("user") != -1:
+    #     user_time = float(line[:line.find("user")])
+    #     line = line[line.find("user") + 5:]
+    #     sys_time = float(line[:line.find("system")])
+    #     times.append(user_time + sys_time)
+    if line.find("warnings") != -1 and len(line) > 10:
         splits = line.split()
-        sats.append(int(splits[3]))
-        unsats.append(int(splits[5]))
+        model_name = splits[0]
+        print(model_name)
+        info[model_name] = line.strip()
 
-print(sats, unsats, times)
+for model in SpecifiedRanges.models:
+    if model in info:
+        print(info[model])
+    else:
+        print("Runtime error when running %s." % model)
+    

@@ -148,5 +148,5 @@ if __name__ == "__main__":
         else:
             cnt_unsat += 1
         cnt_all += 1
-    print("all: ", cnt_all, "warnings: ", cnt_sat, "safe: ", cnt_unsat, "unknown because of API: ", cnt_unknown)
+    print(network_name, ", all: ", cnt_all, "\twarnings: ", cnt_sat, "\tsafe: ", cnt_unsat)
     print(graph.get_info())
