@@ -1,6 +1,5 @@
 numpy
 z3-solver
-tensorflow-gpu==1.13.1
 protobuf
 graphviz
 
