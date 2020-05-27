@@ -149,4 +149,3 @@ if __name__ == "__main__":
             cnt_unsat += 1
         cnt_all += 1
     print(network_name, ", all: ", cnt_all, "\twarnings: ", cnt_sat, "\tsafe: ", cnt_unsat)
-    print(graph.get_info())
