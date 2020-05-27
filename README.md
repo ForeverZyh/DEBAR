@@ -5,29 +5,70 @@ This repository contains the implementation and the evaluation of our upcoming E
 
 DEBAR can detect numerical bugs in neural networks at the architecture level (without concrete weights and inputs, before the training session of the neural network).
 
-## Environment 
-
-DEBAR runs on python3 (>=3.5).
-
-We encourage users to use virtual environments such as virtualenv or conda.
-
-```bash
-pip install -r requirements.txt
-```
-
-The current implementation of DEBAR only supports detecting numerical bugs in static computation graphs in TensorFlow. 
-
-DEBAR has a dependency on TensorFlow v1 but is not compatible with TensorFlow v2. You may also notice that DEBAR has a dependency of z3-solver, it is due to some legacy during development which may be removed later.
-
 ## Collected Datasets
 
-We share our two collected datasets and evaluation results [online](https://drive.google.com/file/d/146UDCTFbjO3Wz_BcCVnRkyCo529dxmFk/view?usp=sharing). 
+We share our two collected datasets and evaluation results [online](https://drive.google.com/uc?export=download&id=1GBHFd-fPIBWqJOpIC8ZO8g3F1LoIZYNn). 
 
 The first dataset is a set of 9 buggy architectures collected by existing studies. The buggy architectures come from two studies: eight architectures were collected by a previous [empirical study on TensorFlow bugs](https://github.com/ForeverZyh/TensorFlow-Program-Bugs) (Github/StackOverflow-IPS-id.pbtxt) and one architecture was obtained from the study that proposes and evaluates [TensorFuzz](https://github.com/brain-research/tensorfuzz/blob/master/bugs/collection_bug.py) (TensorFuzz.pbtxt). 
 
 The second dataset contains 48 architectures from a large collection of research projects in TensorFlow Models repository. Overall, our second dataset contains a great diversity of neural architectures like CNN, RNN, GAN, HMM, and so on. Please note that we have no knowledge about whether the architectures in this dataset contain numerical bugs when collecting the dataset.
 
 For every architecture in two datasets, we extract the computation graph by using a TensorFlow API. Each extracted computation graph is represented by a Protocol Buffer file, which provides the operations (nodes) and the data flow relations (edges).
+
+## Setups
+
+There are two ways you can run DEBAR:
+
+1. Run in docker.
+2. Run in virtual environments with virtualenv or conda.
+
+### Setups for docker
+
+Install docker and type the following command to build the image.
+
+```bash
+docker build -t debar .
+```
+
+Then type the following command to start a bash into the image.
+
+```bash
+docker run -it debar:latest bash
+```
+
+### Setups for virtual environments with virtualenv or conda
+
+#### Environment 
+
+DEBAR runs on python3 (>=3.5).
+
+We encourage users to use virtual environments such as virtualenv or conda. Make sure you are in a virtual environment and then follow the steps:
+
+```bash
+pip install -r requirements.txt
+```
+
+The current implementation of DEBAR only supports detecting numerical bugs in static computation graphs in TensorFlow.  If you want a GPU version of TensorFlow, which can accelerate the loading process of protocol buffer files into (GPU) memory.
+
+```bash
+pip install tensorflow-gpu==1.13.1
+```
+
+or a CPU version:
+
+```bash
+pip install tensorflow==1.13.1
+```
+
+DEBAR has a dependency on TensorFlow v1 but is not compatible with TensorFlow v2. You may also notice that DEBAR has a dependency of z3-solver, it is due to some legacy during development which may be removed later.
+
+#### Dataset
+
+We share our two collected datasets and evaluation results [online](https://drive.google.com/uc?export=download&id=1GBHFd-fPIBWqJOpIC8ZO8g3F1LoIZYNn). You can manually download from the link, or
+
+```bash
+curl -L -o dataset.zip 'https://drive.google.com/uc?export=download&id=1GBHFd-fPIBWqJOpIC8ZO8g3F1LoIZYNn'
+```
 
 ## Running DEBAR
 
@@ -50,6 +91,24 @@ The specification of ranges of weights/inputs can be given in two ways:
 
 The recommended way of specifying ranges is first trying to input to the console and then manually store the ranges in `./parse/specified_ranges.py` if future reproduction is needed.
 
+### Example
+
+If you unzip the dataset in the DEBAR directory, you can type the following command to get the result of `Github-IPS-1`.
+
+```bash
+python analysis_main.py ./computation_graphs_and_TP_list/computation_graphs/Github-IPS-1.pbtxt
+```
+
+Our tool will report the following:
+
+```
+Log Log
+warning
+Github-IPS-1 , all:  5 	warnings:  1 	safe:  4
+```
+
+, which means there are 5 unsafe operations in total. Among them, 1 warning is generated on the operation `Lod` with name `Log` and the other 4 unsafe operations are verified to be safe.
+
 ## Reproduce Evaluation in our Paper
 
 There are four tags showing the four configurations mentioned in our paper.
@@ -59,7 +118,7 @@ There are four tags showing the four configurations mentioned in our paper.
 * `expansion-affine`: We use the **tensor expansion** as the abstraction for tensors and interval abstraction **with affine relations**.
 * `partition-wo-affine`: We use the **tensor smashing** as the abstraction for tensors and interval abstraction **without affine relations**.
 
-Please checkout to each tag and the following command, where `PATH_TO_DATASETS` is the path of the downloaded datasets, is supposed to reproduce the evaluation results in our paper.
+Please checkout to each tag and the following command, where `PATH_TO_DATASETS` is the path of the downloaded datasets, is supposed to reproduce the evaluation results in our paper. **In docker, `PATH_TO_DATASETS` is `./computation_graphs_and_TP_list/computation_graphs`.**
 
 ```bash
 python main.py PATH_TO_DATASETS

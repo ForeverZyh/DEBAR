@@ -14,4 +14,5 @@ RUN curl -L -o a.zip 'https://drive.google.com/uc?export=download&id=1GBHFd-fPIB
 RUN unzip a.zip
 
 COPY . .
-CMD [ "python", "./main.py", "./computation_graphs_and_TP_list/computation_graphs"]
+# Reproduce the results of our paper.
+# CMD [ "python", "./main.py", "./computation_graphs_and_TP_list/computation_graphs"]
