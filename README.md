@@ -126,13 +126,13 @@ Please checkout to each tag and the following command, where `PATH_TO_DATASETS` 
 python main.py PATH_TO_DATASETS
 ```
 
-The above command will only report one summary line for each architecture. For example, it will report the following summary line for the architecture Github-IPS-1:
+The above command will only report one summary line for each architecture. For example, it will report the following summary line for the architecture `Github-IPS-1`:
 
     Github-IPS-1 , all:  5 	warnings:  1 	safe:  4
 
-And the full output will be stored at ./results.txt.
+And the full output will be stored at `./results.txt`.
 
-Notice that we manually classify the warnings to true positives and false positives. The result and reason for each warning are reported in ./computation_graphs_and_TP_list/true_positives.csv (inside the collected datasets).
+Notice that we manually classify the warnings to true positives and false positives. The result and reason for each warning are reported in `./computation_graphs_and_TP_list/true_positives.csv` (inside the collected datasets).
 
 
 ## Published Work
