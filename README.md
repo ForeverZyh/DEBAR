@@ -102,12 +102,14 @@ python analysis_main.py ./computation_graphs_and_TP_list/computation_graphs/Gith
 Our tool will report the following:
 
 ```
+(1546, 5052902)
 Log Log
 warning
 Github-IPS-1 , all:  5 	warnings:  1 	safe:  4
 ```
 
-, which means there are 5 unsafe operations in total. Among them, 1 warning is generated on the operation `Lod` with name `Log` and the other 4 unsafe operations are verified to be safe.
+, which means there are 5 unsafe operations in total. Among them, 1 warning is generated on the operation `Log` with name `Log` and the other 4 unsafe operations are verified to be safe.
+DEBAR will also output the basic information of the architecture: `(1546, 5052902)` means that there are 1546 operations and 5052902 parameters in the architecture.
 
 ## Reproduce Evaluation in our Paper
 
