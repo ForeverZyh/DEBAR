@@ -5,6 +5,13 @@ This repository contains the implementation and the evaluation of our upcoming E
 
 DEBAR can detect numerical bugs in neural networks at the architecture level (without concrete weights and inputs, before the training session of the neural network).
 
+We have created pull requests to fix the numerical bugs that we found in open source repositories. And some of them are accepted and merged:
+
+* https://github.com/tensorflow/models/pull/8223
+
+* https://github.com/tensorflow/models/pull/8221
+
+
 ## Collected Datasets
 
 We share our two collected datasets and evaluation results [online](https://drive.google.com/uc?export=download&id=1GBHFd-fPIBWqJOpIC8ZO8g3F1LoIZYNn). 
