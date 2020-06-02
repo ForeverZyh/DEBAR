@@ -1,6 +1,7 @@
 # call the analysis_main.py
 import sys
 import os
+import time
 
 from parse.specified_ranges import SpecifiedRanges
 
@@ -22,7 +23,10 @@ result_filename = "results.txt"
 
 open(result_filename, 'w').close()
 
+times = {}
 for model in SpecifiedRanges.models:
+    t0 = time.time()
+    print("Running %s" % model)
     if not unbounded_weight and not unbounded_input:
         os.system(
             "(%s ./analysis_main.py %s/%s.pbtxt) >> %s 2>&1" % (interpreter_path, path, model, result_filename))
@@ -32,6 +36,7 @@ for model in SpecifiedRanges.models:
     elif unbounded_input:
         os.system("(%s ./analysis_main.py %s/%s.pbtxt unbounded_input) >> %s 2>&1" % (
             interpreter_path, path, model, result_filename))
+    times[model] = time.time() - t0
 
 lines = open(result_filename).readlines()
 # times = []
@@ -45,12 +50,10 @@ for line in lines:
     if line.find("warnings") != -1 and len(line) > 10:
         splits = line.split()
         model_name = splits[0]
-        print(model_name)
         info[model_name] = line.strip()
 
 for model in SpecifiedRanges.models:
     if model in info:
-        print(info[model])
+        print(info[model] + "\t in time: %.2f" % times[model])
     else:
         print("Runtime error when running %s." % model)
-    

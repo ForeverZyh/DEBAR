@@ -100,46 +100,75 @@ The recommended way of specifying ranges is first trying to input to the console
 
 ### Example
 
-If you unzip the dataset in the DEBAR directory, you can type the following command to get the result of `Github-IPS-1`.
+In the working directory of docker image, you can type the following command to get the result of `TensorFuzz`.
 
 ```bash
-python analysis_main.py ./computation_graphs_and_TP_list/computation_graphs/Github-IPS-1.pbtxt
+python analysis_main.py ./computation_graphs_and_TP_list/computation_graphs/TensorFuzz.pbtxt
 ```
 
 Our tool will report the following:
 
 ```
-(1546, 5052902)
+(225, 178110)
+Exp Exp
+warnings
+Exp Exp_1
+warnings
+RealDiv truediv
+warnings
 Log Log
-warning
-Github-IPS-1 , all:  5 	warnings:  1 	safe:  4
+warnings
+TensorFuzz , all:  4 	warnings:  4 	safe:  0
 ```
 
-, which means there are 5 unsafe operations in total. Among them, 1 warning is generated on the operation `Log` with name `Log` and the other 4 unsafe operations are verified to be safe.
-DEBAR will also output the basic information of the architecture: `(1546, 5052902)` means that there are 1546 operations and 5052902 parameters in the architecture.
+, which means there are 4 unsafe operations in total. DEBAR generates warnings for all of them. DEBAR will output the operation and the name of the node, e.g., `Exp Exp_1` means the operation is `Exp` and the name of the node is `Exp_1`. DEBAR will also output the basic information of the architecture: `(225, 178110)` means that there are 225 operations and 178110 parameters in the architecture.
 
 ## Reproduce Evaluation in our Paper
 
-There are four tags showing the four configurations mentioned in our paper.
-
-* `partition-affine`: We use the **tensor partitioning** as the abstraction for tensors and interval abstraction **with affine relations**.
-* `smashing-affine`: We use the **tensor smashing** as the abstraction for tensors and interval abstraction **with affine relations**.
-* `expansion-affine`: We use the **tensor expansion** as the abstraction for tensors and interval abstraction **with affine relations**.
-* `partition-wo-affine`: We use the **tensor smashing** as the abstraction for tensors and interval abstraction **without affine relations**.
-
-Please checkout to each tag and the following command, where `PATH_TO_DATASETS` is the path of the downloaded datasets, is supposed to reproduce the evaluation results in our paper. **In docker, `PATH_TO_DATASETS` is `./computation_graphs_and_TP_list/computation_graphs`.**
+Please type the following command, which is supposed to reproduce the evaluation results in our paper.
 
 ```bash
-python main.py PATH_TO_DATASETS
+python main.py ./computation_graphs_and_TP_list/computation_graphs/
 ```
 
-The above command will only report one summary line for each architecture. For example, it will report the following summary line for the architecture `Github-IPS-1`:
+The above command (typically running 30-60mins) will only report one summary line for each architecture. For example, it will report the following summary line for the architecture `TensorFuzz`:
 
-    Github-IPS-1 , all:  5 	warnings:  1 	safe:  4
+```
+TensorFuzz , all:  4 	warnings:  4 	safe:  0	 in time: 2.64
+```
 
 And the full output will be stored at `./results.txt`.
 
+The `safe` number corresponds to the column #6 (DEBAR-TN) in Table 1 and the `warnings` number corresponds to the sum of column #5 (TP) and column #7 (DEBAR-FP) in Table 1.
+
 Notice that we manually classify the warnings to true positives and false positives. The result and reason for each warning are reported in `./computation_graphs_and_TP_list/true_positives.csv` (inside the collected datasets).
+
+### Other Results
+
+We have reproduced the results of DEBAR in Table 1. There are other results `Array smashing`, `Sole Interval Abstraction`, and `Array Expansion`. Because they are not different settings from DEBAR, we create 3 individual tags for these results. 
+
+* `Array Smashing` has the tag `smashing-affine`.
+  Please checkout to tag `smashing-affine` by the following command. And then build the docker image again.
+
+  ```bash
+  git checkout tags/smashing-affine -b smashing-affine
+  ```
+
+* `Sole Interval Abstraction` has the tag `partition-wo-affine`.
+  Please checkout to tag `partition-wo-affine` by the following command. And then build the docker image again.
+
+  ```bash
+  git checkout tags/partition-wo-affine -b partition-wo-affine
+  ```
+
+* `Array Expansion` has the tag `expansion-affine`.
+  Please checkout to tag `expansion-affine` by the following command. And then build the docker image again.
+
+  ```bash
+  git checkout tags/expansion-affine -b expansion-affine
+  ```
+
+  Notice that `expansion-affine` needs a 30-mins timeout. Instead, we manually comment out the corresponding model names in the `./parse/specified_ranges.py`. 
 
 
 ## Published Work
