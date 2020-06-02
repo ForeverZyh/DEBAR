@@ -9,7 +9,6 @@ import math
 import sys
 import os
 
-
 if __name__ == "__main__":
     sys.setrecursionlimit(100000)
     try:
@@ -25,16 +24,16 @@ if __name__ == "__main__":
 
     except:
         print(
-            "Please run 'python test_script PBTEXT_FILENAME'.\nAborted...")
+            "Please run 'python analysis_main.py PBTXT_FILENAME'.\nAborted...")
         exit(1)
 
     rule = ["Log", "Exp", "RealDiv", "Sqrt", "Rsqrt", "Expm1", "Log1p", "Reciprocal"]
-    
+
     network_name = os.path.basename(pbtxt)[:-6]
     if network_name in SpecifiedRanges.specified_ranges:
         SpecifiedRanges.ranges_looking_up = SpecifiedRanges.specified_ranges[network_name]
-        
-    graph = Graph(pbtxt)#, "verbose.txt")
+
+    graph = Graph(pbtxt)  # , "verbose.txt")
     suspected_nodes = []
     for node in graph.graph_def.node:
         if node.op in rule and graph.f.find(node.name) == graph.main_clique:
@@ -49,7 +48,7 @@ if __name__ == "__main__":
         # graph.draw(graph.backward_slice(suspected_node.name, set()), "real_interested")
         if suspected_node.op in ["RealDiv", "Floormod"]:
             ret = graph.forward_analysis(graph.node_by_name[graph.graph_backward[0][suspected_node.name][1]],
-                                                 suspected_node)
+                                         suspected_node)
         else:
             ret = graph.forward_analysis(suspected_node)
         if ret is None:
@@ -91,7 +90,8 @@ if __name__ == "__main__":
             index = graph.edge_index[suspected_node.name][0]
         else:
             raise NotImplementedError("No rule for ", suspected_node.op)
-            
+
+
         def is_valid(input_range):
             additional_constraint = meet(input_range, suspected_node_input)
             S = z3.Solver()
@@ -99,7 +99,8 @@ if __name__ == "__main__":
             ans = S.check()
             assert ans != z3.unknown
             return ans == z3.unsat
-        
+
+
         def is_valid_by_split():
             if is_valid(graph.node_output[backward_analysis_const_start].index_of(index).value):
                 return True
@@ -120,24 +121,24 @@ if __name__ == "__main__":
                         is_span_valid = True
                         for span in spans:
                             override_dict[name] = span
-                            node_out = graph.reevaluate(nodes_interested, backward_analysis_const_start, changed, override_dict)
+                            node_out = graph.reevaluate(nodes_interested, backward_analysis_const_start, changed,
+                                                        override_dict)
                             if not is_valid(node_out.index_of(index).value):
                                 is_span_valid = False
                                 break
-                                
+
                         if is_span_valid:
                             return True
-                
+
                 return False
-                
-                
+
+
         if not is_valid_by_split():
             print(suspected_node.op, suspected_node.name)
-            print("sat")
+            print("warnings")
             cnt_sat += 1
-#             if cnt_sat == 1: exit(0)
+        #             if cnt_sat == 1: exit(0)
         else:
             cnt_unsat += 1
         cnt_all += 1
-    print("all: ", cnt_all, "sat: ", cnt_sat, "unsat: ", cnt_unsat, "unknown because of API: ", cnt_unknown)
-    print(graph.get_info())
+    print(network_name, ", all: ", cnt_all, "\twarnings: ", cnt_sat, "\tsafe: ", cnt_unsat)
