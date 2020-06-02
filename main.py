@@ -24,6 +24,7 @@ result_filename = "results.txt"
 open(result_filename, 'w').close()
 
 for model in SpecifiedRanges.models:
+    print("Running %s" % model)
     if not unbounded_weight and not unbounded_input:
         os.system(
             "(%s ./analysis_main.py %s/%s.pbtxt) >> %s 2>&1" % (interpreter_path, path, model, result_filename))
@@ -46,7 +47,6 @@ for line in lines:
     if line.find("warnings") != -1 and len(line) > 10:
         splits = line.split()
         model_name = splits[0]
-        print(model_name)
         info[model_name] = line.strip()
 
 for model in SpecifiedRanges.models:
@@ -54,4 +54,3 @@ for model in SpecifiedRanges.models:
         print(info[model])
     else:
         print("Runtime error when running %s." % model)
-    
