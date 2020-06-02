@@ -58,4 +58,4 @@ for model in SpecifiedRanges.models:
     if model in info:
         print(info[model] + "\t in time: %.2f" % times[model])
     else:
-        print("Runtime error when running %s." % model)
+        print("Comment out %s due to 30-mins timeout." % model)
