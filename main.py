@@ -40,6 +40,7 @@ for model in SpecifiedRanges.models:
     times[model] = time.time() - t0
 
 lines = open(result_filename).readlines()
+f = open(result_filename, 'a')
 # times = []
 info = {}
 for line in lines:
@@ -56,5 +57,7 @@ for line in lines:
 for model in SpecifiedRanges.models:
     if model in info:
         print(info[model] + "\t in time: %.2f" % times[model])
+        f.write(info[model] + "\t in time: %.2f" % times[model] + "\n")
     else:
         print("Runtime error when running %s." % model)
+        f.write("Runtime error when running %s." % model + "\n")
