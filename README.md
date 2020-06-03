@@ -139,13 +139,13 @@ TensorFuzz , all:  4 	warnings:  4 	safe:  0	 in time: 2.64
 
 And the full output will be stored at `./results.txt`.
 
-The `safe` number corresponds to the column #6 (DEBAR-TN) in Table 1 and the `warnings` number corresponds to the sum of column #5 (TP) and column #7 (DEBAR-FP) in Table 1.
+The `safe` number corresponds to the column #6 (DEBAR-TN) in Table 1 in our ESEC/FSE2020 paper and the `warnings` number corresponds to the sum of column #5 (TP) and column #7 (DEBAR-FP) in Table 1.
 
 Notice that we manually classify the warnings to true positives and false positives. The result and reason for each warning are reported in `./computation_graphs_and_TP_list/true_positives.csv` (inside the collected datasets).
 
 ### Other Results
 
-We have reproduced the results of DEBAR in Table 1. There are other results `Array smashing`, `Sole Interval Abstraction`, and `Array Expansion`. Because they are not different settings from DEBAR, we create 3 individual tags for these results. 
+We have reproduced the results of DEBAR in Table 1 in our ESEC/FSE2020 paper. There are other results `Array smashing` (Table 1), `Sole Interval Abstraction` (Table 1), and `Array Expansion` (Table 3). Because they are different settings from DEBAR, we create 3 individual tags for these results. 
 
 * `Array Smashing` has the tag `smashing-affine`.
   Please checkout to tag `smashing-affine` by the following command. And then build the docker image again.
