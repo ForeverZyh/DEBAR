@@ -40,14 +40,8 @@ for model in SpecifiedRanges.models:
 
 lines = open(result_filename).readlines()
 f = open(result_filename, 'a')
-# times = []
 info = {}
 for line in lines:
-    # if line.find("user") != -1:
-    #     user_time = float(line[:line.find("user")])
-    #     line = line[line.find("user") + 5:]
-    #     sys_time = float(line[:line.find("system")])
-    #     times.append(user_time + sys_time)
     if line.find("warnings") != -1 and len(line) > 10:
         splits = line.split()
         model_name = splits[0]

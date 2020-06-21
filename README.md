@@ -34,13 +34,13 @@ There are two ways you can run DEBAR:
 Install docker and type the following command to build the image.
 
 ```bash
-docker build -t debar .
+docker pull yuhaoz/debar:main
 ```
 
 Then type the following command to start a bash into the image.
 
 ```bash
-docker run -it debar:latest bash
+docker run -it yuhaoz/debar:main bash
 ```
 
 ### Setups for virtual environments with virtualenv or conda
@@ -148,24 +148,24 @@ Notice that we manually classify the warnings to true positives and false positi
 We have reproduced the results of DEBAR in Table 1 in our ESEC/FSE2020 paper. There are other results `Array smashing` (Table 1), `Sole Interval Abstraction` (Table 1), and `Array Expansion` (Table 3). Because they are different settings from DEBAR, we create 3 individual tags for these results. 
 
 * `Array Smashing` has the tag `smashing-affine`.
-  Please checkout to tag `smashing-affine` by the following command. And then build the docker image again.
+  You can checkout to tag `smashing-affine` and then build the docker image again, or a more convenience way is pulling our docker image using
 
   ```bash
-  git checkout tags/smashing-affine -b smashing-affine
+  docker pull yuhaoz/debar:smashing-affine
   ```
 
 * `Sole Interval Abstraction` has the tag `partition-wo-affine`.
-  Please checkout to tag `partition-wo-affine` by the following command. And then build the docker image again.
+  You can checkout to tag `partition-wo-affine` and then build the docker image again, or a more convenience way is pulling our docker image using
 
   ```bash
-  git checkout tags/partition-wo-affine -b partition-wo-affine
+  docker pull yuhaoz/debar:partition-wo-affine
   ```
 
 * `Array Expansion` has the tag `expansion-affine`.
-  Please checkout to tag `expansion-affine` by the following command. And then build the docker image again.
+  You can checkout to tag `expansion-affine` and then build the docker image again, or a more convenience way is pulling our docker image using
 
   ```bash
-  git checkout tags/expansion-affine -b expansion-affine
+  docker pull yuhaoz/debar:expansion-affine
   ```
 
   Notice that `expansion-affine` needs a 30-mins timeout. Instead, we manually comment out the corresponding model names in the `./parse/specified_ranges.py`. 

@@ -54,12 +54,6 @@ if __name__ == "__main__":
             ret = graph.forward_analysis(suspected_node)
         if ret is None:
             continue
-        # elif ret == "ni":
-        #     cnt_all += 1
-        #     print(suspected_node.op, suspected_node.name)
-        #     print("unknown")
-        #     cnt_unknown += 1
-        #     continue
 
         if suspected_node.op in ["Exp", "Expm1"]:
             suspected_node_input = Range(left=math.log(OVERFLOW_LIMIT), right=None, const_type=0)

@@ -499,12 +499,8 @@ class Graph:
             except AttributeError:
                 if u.op.lower() not in ["assert", "nextiteration"]:
                     print(u.op, " not Implemented!")
-                    pre_check = False
             except:
                 pass
-
-        #         if not pre_check:
-        #             return "ni"
 
         for son in nodes_interested[:-1]:
             u = self.node_by_name[son]
