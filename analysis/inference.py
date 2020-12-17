@@ -431,6 +431,11 @@ class InferValue:
             return [Range(left=min(ends), right=max(ends)), dumy(), dumy(), dumy(), dumy()]
 
     @staticmethod
+    def gathernd(args: list, node):
+        assert len(args) == 2
+        return identity(args, node)
+
+    @staticmethod
     def gatherv2(args: list, node):
         assert len(args) == 3
         return identity(args, node)
